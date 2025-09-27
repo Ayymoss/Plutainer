@@ -83,6 +83,10 @@ fi
 
 CMD_ARGS+=(+map_rotate)
 
+if [[ -n "${IW4X_EXTRA_ARGS}" ]]; then
+    CMD_ARGS+=(${IW4X_EXTRA_ARGS})
+fi
+
 # --- Step 5: Launch the iw4x Server ---
 echo "Starting ${IW4X_GAME} Server: ${IW4X_SERVER_NAME}"
 echo "EXECUTING: wine iw4x.exe ${CMD_ARGS[@]}"

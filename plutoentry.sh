@@ -138,6 +138,10 @@ else
     CMD_ARGS+=(+map_rotate)
 fi
 
+if [[ -n "${PLUTO_EXTRA_ARGS}" ]]; then
+    CMD_ARGS+=(${PLUTO_EXTRA_ARGS})
+fi
+
 # --- Step 5: Launch the Plutonium Server ---
 echo "Starting Plutonium ${PLUTO_GAME} Server: ${PLUTO_SERVER_NAME}"
 echo "EXECUTING: wine bin/plutonium-bootstrapper-win32.exe ${CMD_ARGS[@]}"
