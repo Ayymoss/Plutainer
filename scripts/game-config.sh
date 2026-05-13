@@ -377,6 +377,7 @@ _rcon_missing_warning() {
 #   set  rcon_password "value"      (double-quoted, default)
 #   seta rcon_password 'value'      (single-quoted)
 #   set  rcon_password value        (unquoted; value is first token)
+#   rcon_password "value"           (bare; T6/T7 community cfgs do this)
 # Strips line comments (//...) before searching. Picks the last uncommented
 # match, in case the cfg overrides itself.
 # Sets RCON_PASSWORD on success; returns 1 + warning on failure.
@@ -389,7 +390,7 @@ extract_rcon_password() {
 
   local line
   line=$(sed -e 's|//.*$||' "${CONFIG_PATH}" \
-    | grep -iE '^[[:space:]]*set[a]?[[:space:]]+rcon_password[[:space:]]+' \
+    | grep -iE '^[[:space:]]*(set[a]?[[:space:]]+)?rcon_password[[:space:]]+' \
     | tail -1)
 
   if [[ -z "$line" ]]; then
@@ -404,8 +405,9 @@ extract_rcon_password() {
   elif [[ "$line" =~ $sq_pat ]]; then
     RCON_PASSWORD="${BASH_REMATCH[1]}"
   else
-    # Unquoted: token after 'set|seta rcon_password'
-    RCON_PASSWORD=$(echo "$line" | awk '{print $3}')
+    # Unquoted: value is the token immediately after 'rcon_password'.
+    # Strip optional 'set'/'seta' prefix so $2 is always the value.
+    RCON_PASSWORD=$(echo "$line" | awk '{ if ($1 ~ /^[Ss][Ee][Tt][Aa]?$/) print $3; else print $2 }')
   fi
 
   if [[ -z "$RCON_PASSWORD" ]]; then
