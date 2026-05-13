@@ -4,7 +4,7 @@ This repository contains the necessary files to build and run dedicated game ser
 
 The container is available on GitHub Container Registry: `ghcr.io/ayymoss/plutainer:v2`
 
-> **Tag note (v2):** The `v2` tag tracks the new v2 volume layout and the unified `PLUTAINER_*` environment variables. It is built from the `v2-layout` branch and is intentionally separate from `latest`. The `latest` tag continues to point at the older v1 image (legacy `PLUTO_*`/`IW4X_*`/`ALTER_*` env vars, flat `app/gamefiles/` + `app/plutonium/` layout) and is deprecated — no further updates. If you are migrating an existing deployment, see [Upgrading from v1](#upgrading-from-v1). Opt in by changing your `image:` line to `ghcr.io/ayymoss/plutainer:v2`.
+> **Tag note (v2):** The `v2` tag is a **breaking change** from `latest`. It introduces a new volume layout, unified `PLUTAINER_*` environment variables (the legacy `PLUTO_*`/`IW4X_*`/`ALTER_*` prefixes are **not accepted**), and stricter startup validation. It is built from the `v2-layout` branch and is intentionally separate from `latest` — the two tags do not share builds. The `latest` tag continues to point at the older v1 image (legacy env vars, flat `app/gamefiles/` + `app/plutonium/` layout) and is deprecated; no further updates. If you are migrating an existing deployment, see [Upgrading from v1](#upgrading-from-v1). Opt in by changing your `image:` line to `ghcr.io/ayymoss/plutainer:v2`.
 
 ## Overview
 
@@ -50,6 +50,7 @@ The container is configured entirely through environment variables. You must set
 | `PLUTAINER_HEALTHCHECK` | Set to `"false"` to disable the RCON health check. | `true` |
 | `PLUTAINER_SKIP_SEED` | Set to `"true"` to skip first-run [config seeding](#bundled-config-seeds). | `false` |
 | `PLUTAINER_EXTRA_ARGS` | Extra arguments appended to the launch command. | |
+| `PLUTAINER_USE_RAW_CONFIGS` | Set to `"true"` to put cfg files directly in the engine path under `app/runtime/...` and skip the `app/configs/` symlink system. See [Raw Configs Mode](#raw-configs-mode). | `false` |
 | `PLUTAINER_LOG_SYMLINKS` | Set to `"false"` to disable the [log symlink watcher](#log-symlinks). | `true` |
 | `PLUTAINER_LOG_POLL_INTERVAL` | Seconds between log watcher polls. | `2` |
 
@@ -73,23 +74,7 @@ These cannot be unified because they only apply to a single engine family:
 | t6 | 4976 |
 | t7x | 27017 |
 
-#### Backward compatibility (deprecated old-prefix names)
-
-The old `PLUTO_*`, `IW4X_*`, and `ALTER_*` prefixed environment variables are still accepted but will emit a `[DEPRECATED]` warning at startup. They map onto the unified names below:
-
-| Old (deprecated) | New canonical |
-| --- | --- |
-| `PLUTO_GAME`, `IW4X_GAME`, `ALTER_GAME` | `PLUTAINER_GAME` |
-| `PLUTO_CONFIG_FILE`, `IW4X_CONFIG_FILE`, `ALTER_CONFIG_FILE` | `PLUTAINER_CONFIG_FILE` |
-| `PLUTO_PORT`, `IW4X_PORT`, `ALTER_PORT` | `PLUTAINER_PORT` |
-| `PLUTO_SERVER_NAME`, `IW4X_SERVER_NAME`, `ALTER_SERVER_NAME` | `PLUTAINER_SERVER_NAME` |
-| `PLUTO_MOD`, `IW4X_MOD`, `ALTER_MOD` | `PLUTAINER_MOD` |
-| `PLUTO_AUTO_UPDATE`, `IW4X_AUTO_UPDATE`, `ALTER_AUTO_UPDATE` | `PLUTAINER_AUTO_UPDATE` |
-| `PLUTO_HEALTHCHECK`, `IW4X_HEALTHCHECK`, `ALTER_HEALTHCHECK` | `PLUTAINER_HEALTHCHECK` |
-| `PLUTO_SKIP_SEED`, `ALTER_SKIP_SEED` | `PLUTAINER_SKIP_SEED` |
-| `PLUTO_EXTRA_ARGS`, `IW4X_EXTRA_ARGS`, `ALTER_EXTRA_ARGS` | `PLUTAINER_EXTRA_ARGS` |
-
-`PLUTO_SERVER_KEY`, `PLUTO_MAX_CLIENTS`, and `IW4X_NET_LOG_IP` keep their original names — they are not duplicates across families, so they don't need unification.
+> The legacy `PLUTO_*`/`IW4X_*`/`ALTER_*` prefixed env vars from the `:latest` (v1) image are **not accepted** on `:v2`. Use the unified `PLUTAINER_*` names above. The only old names that remain are `PLUTO_SERVER_KEY`, `PLUTO_MAX_CLIENTS`, and `IW4X_NET_LOG_IP` — they are single-family vars and never had a unified form.
 
 ***
 
@@ -119,7 +104,28 @@ app/
 
 Example: for a T6 server with `PLUTAINER_CONFIG_FILE=dedicated_zm.cfg`, you edit `app/configs/dedicated_zm.cfg`, and the container symlinks `app/runtime/plutonium/storage/t6/dedicated_zm.cfg → ../../../../configs/dedicated_zm.cfg`.
 
-Nested configs (e.g. mod-specific cfgs inside `mods/<name>/`) stay at their engine path under `app/runtime/` and are not lifted to `configs/`. You can still edit them there.
+If you set `PLUTAINER_MOD`, the same cfg also gets symlinked into the mod's config dir (e.g. `app/runtime/plutonium/storage/t6/<mod>/dedicated_zm.cfg`), so the engine finds it whether it looks in the base dir or the mod-scoped one.
+
+Nested configs (e.g. cfg files referenced by mods using subdirectories) stay at their engine path under `app/runtime/` and are not lifted to `configs/`. You can still edit them there.
+
+**Auto-lift:** if you set `PLUTAINER_CONFIG_FILE=dedicated.cfg` but the file is at `app/runtime/.../dedicated.cfg` (as a real file, not symlink) rather than `app/configs/dedicated.cfg`, the container moves it into `app/configs/` on next start and the symlink fan-out picks it up. One-time fix, no manual migration.
+
+**Filename mismatch:** if the configured file doesn't exist anywhere, the container refuses to start with a clear error and (if there's a case-only mismatch like `Server.cfg` vs `server.cfg`) tells you which case-insensitive match it found. Filenames remain case-sensitive — the container won't auto-rename.
+
+***
+
+### Raw Configs Mode
+
+Set `PLUTAINER_USE_RAW_CONFIGS=true` to opt out of the `app/configs/` SOT model. With this on:
+
+- The engine config dir under `app/runtime/...` becomes the source of truth.
+- `app/configs/` is left untouched (whatever's there is ignored).
+- No symlinks are placed; cfg files live where the game reads them.
+- Seed configs go directly into the engine dir.
+
+Use this when you want the v1 editing experience inside the v2 directory layout (e.g. tooling on your host expects to find `t6zm-1/runtime/plutonium/storage/t6/dedicated.cfg` as a real file). Default-off so most users get the "edit in one folder" affordance without thinking about it.
+
+You can toggle this between restarts. Plutainer doesn't migrate files when you flip the flag — that's on you.
 
 ***
 
@@ -210,7 +216,26 @@ docker exec <container_name> rcon-cli status
 docker exec -i <container_name> rcon-cli
 ```
 
-Your server configuration file must have `rcon_password` set for `rcon-cli` to work.
+Your server configuration file must have `rcon_password` set for `rcon-cli` to work. Accepted forms in the cfg:
+
+```
+set  rcon_password "your_password_here"
+seta rcon_password 'also_works'
+set  rcon_password unquoted_also_ok
+```
+
+Comment-only lines (`// ...`) are ignored. If multiple uncommented `rcon_password` lines exist, the last one wins. If the parser can't find one, the container prints a `[WARN]` at startup but keeps running — healthcheck and rcon-cli are then unavailable until you add it. **Do not** set `rcon_password` via `PLUTAINER_EXTRA_ARGS` — Plutainer cannot read it back from there.
+
+***
+
+### Restart behavior
+
+Plutainer distinguishes between *configuration errors* (your fault) and *runtime crashes* (the game's fault):
+
+- **Configuration error** (e.g. missing `PLUTAINER_CONFIG_FILE`, wrong volume version, unparseable `PLUTAINER_GAME`): the container prints the error and then `sleep infinity` to **hold** in the `Up` state. No restart loop. Fix the issue and run `docker restart <container>`.
+- **Runtime crash** (wine exits, game segfaults, etc): the container sleeps **30 seconds** after the game process exits, then exits itself. Docker's `restart: unless-stopped` (or your chosen policy) then restarts it. This rate-limits crash loops to ~1 restart per 30s instead of hammering immediately.
+
+Healthcheck still runs on a held container and will eventually mark it unhealthy — useful signal for orchestration.
 
 ***
 

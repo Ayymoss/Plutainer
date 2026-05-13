@@ -41,25 +41,29 @@ CI logic in `.github/workflows/docker-publish.yml`:
 
 Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All entry scripts run with `set -euo pipefail`.
 
-1. **`entrypoint.sh`** — Top-level dispatcher. Sources `game-config.sh`, applies `shim_env_vars` (back-compat for old prefixed names), calls `detect_game_type` to derive `GAME_TYPE`/`BASE_GAME`/etc from `PLUTAINER_GAME`, runs `check_volume_version` (refuses v1 volumes), then `exec`s the family-specific entry script.
+1. **`entrypoint.sh`** — Top-level dispatcher. Sources `game-config.sh`, calls `detect_game_type` (requires `PLUTAINER_GAME`), `check_volume_version` (refuses v1 volumes), then `exec`s the family-specific entry script. On any failure: `hold_indefinitely` (sleep infinity) instead of exiting, to avoid restart loops.
 
-2. **`plutoentry.sh`** — Plutonium server entrypoint. Symlinks game files from the read-only gamefiles mount, runs `plutonium-updater`, seeds bundled configs into `app/configs/`, fans out symlinks from `app/configs/` to the engine's expected config dir, validates env vars, then `exec`s `wine bin/plutonium-bootstrapper-win32.exe`.
+2. **`plutoentry.sh`** — Plutonium server entrypoint. Symlinks game files from the read-only gamefiles mount, runs `plutonium-updater`, seeds bundled configs into the SOT location, fans out symlinks from `app/configs/` to the engine and (if `PLUTAINER_MOD` is set) the mod config dir, calls `ensure_config_present` (auto-lift + refusal), then `launch_game wine ...` (30s exit-throttle wrapper).
 
-3. **`iw4xentry.sh`** — IW4x server entrypoint. Same shape: symlinks game files, runs `iw4x-launcher`, fans out config symlinks, validates env vars, `exec`s `wine iw4x.exe`. No seed bundle (IW4x has no community config repo configured).
+3. **`iw4xentry.sh`** — IW4x server entrypoint. Same shape: symlinks game files, runs `iw4x-launcher`, fans out config symlinks (engine + optional mod dir), validates, `launch_game wine iw4x.exe`. No seed bundle.
 
-4. **`alterentry.sh`** — Alterware (T7x/BO3) entrypoint. Symlinks game files, uses `wget -N` (timestamping) to fetch `t7x.exe` only when upstream is newer, seeds Dss0/t7-server-config bundle, fans out config symlinks, validates env vars, starts `Xvfb` (T7x requires a display), `exec`s `wine t7x.exe`.
+4. **`alterentry.sh`** — Alterware (T7x/BO3) entrypoint. Symlinks game files, uses `wget -N` (timestamping) to fetch `t7x.exe` only when upstream is newer, seeds Dss0/t7-server-config bundle, fans out config symlinks, starts `Xvfb` (T7x requires a display), `launch_game wine t7x.exe`. No mod dir (alterware MOD is a Steam Workshop ID).
 
-5. **`game-config.sh`** — Shared shell library sourced by all other scripts. Provides:
+5. **`game-config.sh`** — Shared shell library sourced by all other scripts. Key helpers:
    - Volume path constants: `PLUTAINER_APP_DIR`, `PLUTAINER_CONFIGS_DIR`, `PLUTAINER_RUNTIME_DIR`, `PLUTAINER_GAMEFILES_DIR`, `PLUTAINER_PLUTONIUM_DIR`, `PLUTAINER_SOURCE_DIR`.
-   - `shim_env_vars`: maps deprecated `PLUTO_*`/`IW4X_*`/`ALTER_*` names onto unified `PLUTAINER_*` with a `[DEPRECATED]` warning.
+   - `hold_indefinitely <msg>`: print the error, then `exec sleep infinity` so the container stays `Up` instead of looping through restarts. Used for any startup validation failure.
+   - `launch_game <cmd>...`: wraps the game invocation; on exit, sleeps 30s before letting the script exit, so docker's restart policy throttles to ~1 restart per 30s.
    - `derive_family <game-tag>`: returns `plutonium`/`iw4x`/`alterware`.
-   - `detect_game_type`: validates `PLUTAINER_GAME`, sets `GAME_TYPE`/`GAME_NAME`/`BASE_GAME`/`CONFIG_FILE`/`CUSTOM_PORT`/`HEALTHCHECK_FLAG`.
-   - `resolve_default_port`, `resolve_engine_config_dir`, `resolve_config_path`.
-   - `link_files <src> <dest> <name1>...`: existence-guarded symlink helper; replaces unsafe `ln -sf src/{a,b,c} dest/` bash brace expansion that creates dangling symlinks when source files are missing.
-   - `seed_configs <game-key> <asset-root> <cfg-root-rel>`: walks bundled seed, lifts top-level `*.cfg` files inside `cfg-root-rel` into `app/configs/`, places everything else under `asset-root`. Idempotent (`cp -n`).
-   - `link_configs <engine-config-dir>`: fans out symlinks from every `app/configs/*.cfg` into the engine's expected dir using relative paths. Reaps dangling cfg symlinks.
+   - `detect_game_type`: validates `PLUTAINER_GAME` (no shim — only PLUTAINER_* accepted), sets `GAME_TYPE`/`GAME_NAME`/`BASE_GAME`/`CONFIG_FILE`/`CUSTOM_PORT`/`HEALTHCHECK_FLAG`.
+   - `resolve_default_port`, `resolve_engine_config_dir`, `resolve_mod_config_dir`.
+   - `resolve_config_layout`: sets `CONFIG_SOT_DIR` and `ALT_CONFIG_DIR` based on `PLUTAINER_USE_RAW_CONFIGS`. Default: SOT = `configs/`, ALT = engine dir. With raw mode on: swapped.
+   - `resolve_config_path`: convenience wrapper that resolves the engine dir + layout in one call so healthcheck/rcon-cli only need this.
+   - `link_files <src> <dest> <name1>...`: existence-guarded symlink helper; replaces unsafe `ln -sf src/{a,b,c} dest/` bash brace expansion.
+   - `seed_configs <game-key> <asset-root> <cfg-root-rel>`: walks bundled seed, lifts top-level `*.cfg` files inside `cfg-root-rel` into `CONFIG_SOT_DIR`, places everything else under `asset-root`. Idempotent.
+   - `link_configs <engine-dir1> [engine-dir2 ...]`: variadic. Fans out symlinks from every `configs/*.cfg` into each engine dir using relative paths. Refuses to overwrite a real (non-symlink) file at engine path (warns instead). Reaps dangling cfg symlinks. No-op when `PLUTAINER_USE_RAW_CONFIGS=true`.
+   - `ensure_config_present`: checks that `CONFIG_FILE` exists at `CONFIG_SOT_DIR`. If absent there but present as a real file at the ALT location, moves it (auto-lift). If absent everywhere, prints a refusal with a `find -iname` case-insensitive hint, returns non-zero.
    - `check_volume_version`: refuses v1 volumes with explicit migration instructions; initialises fresh volumes; writes `.plutainer-version=2`.
-   - `extract_rcon_password`: parses `rcon_password` from `CONFIG_PATH`.
+   - `extract_rcon_password`: parses `rcon_password` from `CONFIG_PATH`. Handles double-quoted, single-quoted, and unquoted values. Strips `//` comments. On failure, prints a structured `[WARN]` (don't block startup) telling the user the accepted forms and not to set the password via `PLUTAINER_EXTRA_ARGS`.
 
 6. **`migrate-v1-to-v2.sh`** — One-shot migration tool, run via `docker run --entrypoint`. Moves `app/gamefiles` → `app/runtime/gamefiles`, `app/plutonium` → `app/runtime/plutonium`, lifts top-level cfg files from known engine config dirs into `app/configs/` and replaces them with relative symlinks, clears stale `app/logs/` entries, writes `.plutainer-version=2`. Supports `--dry-run`.
 
@@ -100,8 +104,17 @@ For Plutonium, `BASE_GAME` is derived by stripping the last two chars from `PLUT
 - **Command args**: iw5 uses `+set sv_config` and `+start_map_rotate`; others use `+exec` and `+map_rotate`.
 - **Game-file symlinks** differ per base game (see `plutoentry.sh` case statement).
 
-## Backward Compatibility
+## Compatibility surface
 
-Old prefixed env vars (`PLUTO_*`, `IW4X_*`, `ALTER_*`) still work — `shim_env_vars` in `game-config.sh` copies them onto the canonical `PLUTAINER_*` names and emits a `[DEPRECATED]` warning. Three names stay as-is because they only apply to a single engine family: `PLUTO_SERVER_KEY`, `PLUTO_MAX_CLIENTS`, `IW4X_NET_LOG_IP`.
+The `:v2` image is a **clean break** from `:latest`. The two share no env vars (other than the always-unique `PLUTO_SERVER_KEY`, `PLUTO_MAX_CLIENTS`, `IW4X_NET_LOG_IP`) and no volume layout. There is no env-var shim in `:v2` — legacy `PLUTO_*`/`IW4X_*`/`ALTER_*` names are silently ignored.
 
 A v1 `app/` volume is refused on startup (`check_volume_version`) with explicit instructions to run `migrate-v1-to-v2.sh`.
+
+## Restart behavior
+
+Two distinct failure modes:
+
+- **Configuration errors** (validation failures, missing env vars, missing config file, v1 volume, unknown game): `hold_indefinitely` → `exec sleep infinity`. Container stays `Up`; healthcheck eventually marks it unhealthy. No restart loop. User fixes and runs `docker restart <name>`.
+- **Runtime crashes** (wine exits): `launch_game` wrapper catches the exit, sleeps 30s, then exits with the original return code. Docker's restart policy fires after that, giving ~1 restart per 30s instead of immediate churn.
+
+`STOPSIGNAL` is `SIGKILL`, so neither path interferes with `docker stop` — that's instant by design.

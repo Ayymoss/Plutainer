@@ -1,8 +1,7 @@
 #!/bin/bash
 #
-# Top-level entrypoint. Applies backward-compat shims for old prefixed env
-# vars, detects the game family, validates the volume version, then delegates
-# to the appropriate game-specific entry script.
+# Top-level entrypoint. Detects the game family, validates the volume
+# version, then delegates to the appropriate game-specific entry script.
 #
 set -euo pipefail
 
@@ -24,23 +23,14 @@ echo
 echo "Brought to you by Ayymoss"
 echo
 
-# --- Shim old-prefix env vars (PLUTO_/IW4X_/ALTER_) into PLUTAINER_* ---
-shim_env_vars
-
 # --- Detect game type from PLUTAINER_GAME ---
 if ! detect_game_type; then
-  echo "-------------------------------------------------" >&2
-  echo "Set PLUTAINER_GAME to one of: t4mp, t4sp, t5mp, t5sp, t6mp, t6zm, iw5mp, iw4x, t7x" >&2
-  echo "Exiting in 10 seconds..." >&2
-  sleep 10
-  exit 1
+  hold_indefinitely "Set PLUTAINER_GAME to one of: t4mp, t4sp, t5mp, t5sp, t6mp, t6zm, iw5mp, iw4x, t7x"
 fi
 
 # --- Validate (or initialise) volume layout ---
 if ! check_volume_version; then
-  echo "Exiting in 10 seconds..." >&2
-  sleep 10
-  exit 1
+  hold_indefinitely "Volume layout check failed. See the migration instructions above."
 fi
 
 # --- Dispatch to game-specific entrypoint ---

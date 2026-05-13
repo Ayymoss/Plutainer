@@ -8,9 +8,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/game-config.sh"
 
-detect_game_type || exit 1
-check_volume_version || exit 1
-resolve_engine_config_dir || exit 1
+detect_game_type     || hold_indefinitely "detect_game_type failed."
+check_volume_version || hold_indefinitely "check_volume_version failed."
+resolve_engine_config_dir
+resolve_mod_config_dir
+resolve_config_layout
 
 SOURCE_DIR="$PLUTAINER_SOURCE_DIR"
 DEST_DIR="$PLUTAINER_GAMEFILES_DIR"
@@ -42,9 +44,7 @@ if compgen -G "$SOURCE_DIR/zone/*" > /dev/null; then
 fi
 
 # --- Step 2: Download/Update T7x ---
-# wget -N uses timestamping: it sends If-Modified-Since and only downloads
-# when upstream is newer than the local file. Avoids redownloading on every
-# restart.
+# wget -N: timestamping. Only downloads when upstream is newer than local.
 ALTER_EXE_LOC="$DEST_DIR/t7x.exe"
 if [[ -f "$ALTER_EXE_LOC" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
   echo "Skipping T7x update because PLUTAINER_AUTO_UPDATE is set to 'false'."
@@ -62,39 +62,32 @@ cd "$DEST_DIR"
 # --- Step 3: Seed default configs from bundled community repo ---
 # t7x seed bundle has two top-level dirs: `zone/` (configs) and `t7x/` (lobby
 # scripts). cfg_root_rel="zone" lifts top-level `zone/*.cfg` files into
-# app/configs/ flat; everything else stays under runtime/gamefiles/.
+# CONFIG_SOT_DIR; everything else stays under runtime/gamefiles/.
 if [[ "${PLUTAINER_SKIP_SEED:-}" != "true" ]]; then
   seed_configs t7x "$DEST_DIR" "zone"
 fi
 
 # --- Step 4: Fan-out configs/ → engine config dir ---
+# (Alterware MOD is a Steam Workshop ID, not a filesystem path — no MOD dir.)
 link_configs "$ENGINE_CONFIG_DIR"
 
-# --- Step 5: Validate Required Environment Variables ---
-MISSING_VAR=false
+# --- Step 5: Validate environment + ensure config file exists ---
 PLUTAINER_SERVER_NAME="${PLUTAINER_SERVER_NAME:-T7x Docker Server}"
 
 if [[ "${PLUTAINER_GAME}" != "t7x" ]]; then
-  echo "[ERROR] PLUTAINER_GAME must be 't7x' for the Alterware entrypoint." >&2
-  MISSING_VAR=true
+  hold_indefinitely "PLUTAINER_GAME must be 't7x' for the Alterware entrypoint."
 fi
 if [[ -z "${PLUTAINER_CONFIG_FILE:-}" ]]; then
-  echo "[ERROR] PLUTAINER_CONFIG_FILE is not set." >&2
-  echo "  > Filename of your server config (e.g. 'server_zm.cfg')." >&2
-  MISSING_VAR=true
+  hold_indefinitely "PLUTAINER_CONFIG_FILE is not set. Specify the filename of your server config (e.g. 'server_zm.cfg')."
 fi
-
-if [[ "$MISSING_VAR" == "true" ]]; then
-  echo "-------------------------------------------------" >&2
-  echo "Configuration error. Halting startup." >&2
-  sleep 10
-  exit 1
+if ! ensure_config_present; then
+  hold_indefinitely "Config file not found. See [ERROR] above."
 fi
 
 # --- Step 6: Resolve port ---
 if [[ -z "${PLUTAINER_PORT:-}" ]]; then
   echo "PLUTAINER_PORT not set, using default for t7x..."
-  resolve_default_port "t7x" || { sleep 10; exit 1; }
+  resolve_default_port "t7x" || hold_indefinitely "Could not resolve default port."
   PLUTAINER_PORT="${DEFAULT_PORT}"
   echo "Default port set to ${PLUTAINER_PORT}"
 fi
@@ -112,7 +105,7 @@ if [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]]; then
     CMD_ARGS+=(${PLUTAINER_EXTRA_ARGS})
 fi
 
-# --- Step 8: Launch ---
+# --- Step 8: Launch (with 30s crash throttle) ---
 # T7x requires a display even in dedicated/headless mode, so start a virtual
 # framebuffer for Wine before launching.
 echo "Starting virtual display..."
@@ -124,4 +117,4 @@ sleep 1
 
 echo "Starting T7x Server: ${PLUTAINER_SERVER_NAME}"
 echo "EXECUTING: wine t7x.exe ${CMD_ARGS[*]}"
-exec wine t7x.exe "${CMD_ARGS[@]}"
+launch_game wine t7x.exe "${CMD_ARGS[@]}"

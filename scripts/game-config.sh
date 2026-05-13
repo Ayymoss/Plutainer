@@ -6,7 +6,7 @@
 # Volume layout (v2):
 #   /home/plutainer/app/
 #     configs/                         # User-facing config files (flat).
-#                                      # Real files. Engine paths symlink here.
+#                                      # Real files unless PLUTAINER_USE_RAW_CONFIGS=true.
 #     logs/                            # Stable symlinks to active *.log files
 #                                      # (maintained by log-watcher.sh).
 #     runtime/
@@ -24,24 +24,33 @@ PLUTAINER_GAMEFILES_DIR="$PLUTAINER_RUNTIME_DIR/gamefiles"
 PLUTAINER_PLUTONIUM_DIR="$PLUTAINER_RUNTIME_DIR/plutonium"
 PLUTAINER_SOURCE_DIR="/home/plutainer/gamefiles"
 
-# Map old-prefix env vars (PLUTO_*, IW4X_*, ALTER_*) to canonical PLUTAINER_*
-# names. Only sets PLUTAINER_<SUFFIX> if it is currently unset. Emits a single
-# deprecation warning per old name that's actually being used.
-shim_env_vars() {
-  local suffix prefix old new
-  for suffix in GAME CONFIG_FILE PORT SERVER_NAME MOD AUTO_UPDATE HEALTHCHECK SKIP_SEED EXTRA_ARGS; do
-    new="PLUTAINER_$suffix"
-    [[ -n "${!new:-}" ]] && continue
-    for prefix in PLUTO IW4X ALTER; do
-      old="${prefix}_${suffix}"
-      if [[ -n "${!old:-}" ]]; then
-        printf -v "$new" '%s' "${!old}"
-        export "$new"
-        echo "[DEPRECATED] ${old} is renamed to ${new}; old name still accepted for now." >&2
-        break
-      fi
-    done
-  done
+# Halt without exiting. Container stays in the "running" state, docker
+# restart policies won't fire a loop, healthchecks will eventually mark it
+# unhealthy — user fixes config and runs `docker restart`.
+hold_indefinitely() {
+  local msg="${1:-Refusing to start.}"
+  echo "-------------------------------------------------" >&2
+  echo "$msg" >&2
+  echo "[INFO] Holding container running (sleep infinity) to prevent a restart loop." >&2
+  echo "[INFO] Fix the issue, then run: docker restart <container>" >&2
+  exec sleep infinity
+}
+
+# Run the game binary, then sleep 30s before letting the container exit.
+# Restart policies (e.g. `restart: unless-stopped`) react to container exit
+# but docker compose has no native min-delay knob — the in-script sleep is
+# how we throttle real crashes to one restart per ~30s.
+# Args: command + its arguments (e.g. wine ...).
+launch_game() {
+  set +e
+  "$@"
+  local rc=$?
+  set -e
+
+  echo "[INFO] Game process exited (rc=$rc)." >&2
+  echo "[INFO] Sleeping 30s before container exit to throttle restart." >&2
+  sleep 30
+  exit "$rc"
 }
 
 # Derive the game family ("plutonium", "iw4x", "alterware") from PLUTAINER_GAME.
@@ -56,10 +65,8 @@ derive_family() {
 }
 
 # Populate GAME_TYPE, GAME_NAME, BASE_GAME, CONFIG_FILE, CUSTOM_PORT,
-# HEALTHCHECK_FLAG from PLUTAINER_* (applying back-compat shims first).
+# HEALTHCHECK_FLAG from PLUTAINER_*.
 detect_game_type() {
-  shim_env_vars
-
   if [[ -z "${PLUTAINER_GAME:-}" ]]; then
     echo "[ERROR] No game specified. Set PLUTAINER_GAME (e.g. t6zm, iw4x, t7x)." >&2
     return 1
@@ -99,7 +106,8 @@ resolve_default_port() {
 }
 
 # Set ENGINE_CONFIG_DIR — the directory where the game engine reads cfg files
-# from. Entrypoints place symlinks here that point back into PLUTAINER_CONFIGS_DIR.
+# from. Entrypoints place symlinks here that point back into CONFIG_SOT_DIR
+# (unless PLUTAINER_USE_RAW_CONFIGS is true, in which case engine path IS the SOT).
 resolve_engine_config_dir() {
   case "${GAME_TYPE}" in
     plutonium)
@@ -118,10 +126,47 @@ resolve_engine_config_dir() {
   esac
 }
 
-# Set CONFIG_PATH to the user-facing real config file in configs/.
-# Requires CONFIG_FILE to be set.
+# Set MOD_CONFIG_DIR — the dir where the game looks for cfg files inside the
+# active mod (fs_game), if PLUTAINER_MOD is set. Empty when no mod or N/A
+# (e.g. alterware uses Steam Workshop IDs, not filesystem paths).
+resolve_mod_config_dir() {
+  MOD_CONFIG_DIR=""
+  [[ -z "${PLUTAINER_MOD:-}" ]] && return 0
+  case "$GAME_TYPE" in
+    plutonium)
+      case "$BASE_GAME" in
+        t4|iw5) MOD_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/$PLUTAINER_MOD" ;;
+        *)      MOD_CONFIG_DIR="$PLUTAINER_PLUTONIUM_DIR/storage/$BASE_GAME/$PLUTAINER_MOD" ;;
+      esac
+      ;;
+    iw4x)
+      MOD_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/$PLUTAINER_MOD"
+      ;;
+    # alterware: PLUTAINER_MOD is a Steam Workshop ID; no filesystem cfg dir.
+  esac
+}
+
+# Decide the config source-of-truth. Default: configs/ (symlink fan-out to
+# engine dir). With PLUTAINER_USE_RAW_CONFIGS=true: engine dir IS the SOT
+# (no symlinks, cfgs live where the game reads them).
+# Requires ENGINE_CONFIG_DIR set first (call resolve_engine_config_dir).
+# Sets CONFIG_SOT_DIR, ALT_CONFIG_DIR, CONFIG_PATH.
+resolve_config_layout() {
+  if [[ "${PLUTAINER_USE_RAW_CONFIGS:-}" == "true" ]]; then
+    CONFIG_SOT_DIR="$ENGINE_CONFIG_DIR"
+    ALT_CONFIG_DIR="$PLUTAINER_CONFIGS_DIR"
+  else
+    CONFIG_SOT_DIR="$PLUTAINER_CONFIGS_DIR"
+    ALT_CONFIG_DIR="$ENGINE_CONFIG_DIR"
+  fi
+  CONFIG_PATH="$CONFIG_SOT_DIR/$CONFIG_FILE"
+}
+
+# Convenience for callers (healthcheck.sh, rcon-cli) that only need
+# CONFIG_PATH set. Runs the chain end-to-end.
 resolve_config_path() {
-  CONFIG_PATH="$PLUTAINER_CONFIGS_DIR/${CONFIG_FILE}"
+  resolve_engine_config_dir || return 1
+  resolve_config_layout
 }
 
 # Symlink specific named entries from a source dir into a destination dir.
@@ -145,22 +190,16 @@ link_files() {
 # Copy bundled community seed configs into the volume on first run.
 # Strategy:
 #   - Top-level *.cfg files inside the seed's "config root" subdir
-#     (cfg_root_rel within the seed bundle) are placed flat in app/configs/
-#     so the user can edit them all in one directory.
-#   - Everything else (assets, mod scripts, nested cfgs, etc) is placed under
+#     (cfg_root_rel within the seed bundle) land in CONFIG_SOT_DIR.
+#   - Everything else (assets, mod scripts, nested cfgs, etc) lands under
 #     asset_root, preserving the seed's relative path.
 # Always idempotent: never overwrites a file that already exists.
 # Args: <game-key> <asset_root> <cfg_root_rel>
-#   game-key:     subdir under .plutainer/seed-configs/ to read from
-#   asset_root:   destination for non-flat-cfg assets (typically runtime/...)
-#   cfg_root_rel: path within the seed (and within asset_root) where the
-#                 engine reads top-level cfg files. Use "" if the seed root
-#                 IS the engine config dir.
 seed_configs() {
   local game="$1" asset_root="$2" cfg_root_rel="${3:-}"
   local src="/home/plutainer/.plutainer/seed-configs/${game}"
   [[ -d "$src" ]] || return 0
-  mkdir -p "$asset_root" "$PLUTAINER_CONFIGS_DIR"
+  mkdir -p "$asset_root" "$CONFIG_SOT_DIR"
 
   local rel parent dest
   while IFS= read -r -d '' relpath; do
@@ -168,7 +207,7 @@ seed_configs() {
     parent="$(dirname "$rel")"
     [[ "$parent" == "." ]] && parent=""
     if [[ "$rel" == *.cfg && "$parent" == "$cfg_root_rel" ]]; then
-      dest="$PLUTAINER_CONFIGS_DIR/$(basename "$rel")"
+      dest="$CONFIG_SOT_DIR/$(basename "$rel")"
     else
       dest="$asset_root/$rel"
     fi
@@ -177,30 +216,83 @@ seed_configs() {
   done < <(cd "$src" && find . -type f -print0)
 }
 
-# Place a symlink in <engine_config_dir>/<basename> for every *.cfg file in
-# app/configs/. Symlinks are relative so they resolve the same on host or in
-# sidecar containers. Removes dangling cfg symlinks that point into configs/
-# but whose source has been deleted.
-# Args: <engine_config_dir>
+# For every *.cfg in configs/, place a relative symlink at each provided
+# engine dir. Skips dirs that don't exist; warns on real-file collisions
+# (refuses to overwrite a non-symlink); reaps cfg symlinks under each engine
+# dir whose target no longer exists.
+# No-op when PLUTAINER_USE_RAW_CONFIGS is true (engine path IS the SOT).
+# Args: <engine_dir1> [engine_dir2 ...]
 link_configs() {
-  local engine_config_dir="$1"
+  [[ "${PLUTAINER_USE_RAW_CONFIGS:-}" == "true" ]] && return 0
   [[ -d "$PLUTAINER_CONFIGS_DIR" ]] || return 0
-  mkdir -p "$engine_config_dir"
 
-  local f base link target_rel
-  for f in "$PLUTAINER_CONFIGS_DIR"/*.cfg; do
-    [[ -e "$f" ]] || continue
-    base="$(basename "$f")"
-    link="$engine_config_dir/$base"
-    target_rel=$(realpath --relative-to="$engine_config_dir" "$f")
-    ln -sfn "$target_rel" "$link"
-  done
+  local engine_dir f base link target_rel
+  for engine_dir in "$@"; do
+    [[ -n "$engine_dir" ]] || continue
+    mkdir -p "$engine_dir"
 
-  for link in "$engine_config_dir"/*.cfg; do
-    [[ -L "$link" && ! -e "$link" ]] || continue
-    echo "[link_configs] reaping dangling: $link" >&2
-    rm -f "$link"
+    # Fan-out: configs/<X>.cfg -> engine_dir/<X>.cfg
+    for f in "$PLUTAINER_CONFIGS_DIR"/*.cfg; do
+      [[ -e "$f" ]] || continue
+      base="$(basename "$f")"
+      link="$engine_dir/$base"
+      if [[ -e "$link" && ! -L "$link" ]]; then
+        echo "[link_configs] WARNING: real file at $link blocks symlink to $f" >&2
+        echo "  Move or delete the real file if you want it managed via configs/." >&2
+        continue
+      fi
+      target_rel=$(realpath --relative-to="$engine_dir" "$f")
+      ln -sfn "$target_rel" "$link"
+    done
+
+    # Reap: drop cfg symlinks here whose source no longer resolves.
+    for link in "$engine_dir"/*.cfg; do
+      [[ -L "$link" && ! -e "$link" ]] || continue
+      echo "[link_configs] reaping dangling: $link" >&2
+      rm -f "$link"
+    done
   done
+}
+
+# Ensure $CONFIG_FILE exists at the SOT location before launch.
+#   - If at SOT: ok.
+#   - If at the ALT location as a real (non-symlink) file: move it to SOT,
+#     log the auto-lift, ok.
+#   - Otherwise: refuse with a case-sensitive find hint.
+# Requires CONFIG_SOT_DIR, ALT_CONFIG_DIR, CONFIG_FILE set.
+ensure_config_present() {
+  local cfg="$CONFIG_FILE"
+  local sot_path="$CONFIG_SOT_DIR/$cfg"
+  local alt_path="$ALT_CONFIG_DIR/$cfg"
+
+  if [[ -e "$sot_path" ]]; then
+    return 0
+  fi
+
+  if [[ -f "$alt_path" && ! -L "$alt_path" ]]; then
+    echo "[INFO] Auto-lift: found $cfg at $ALT_CONFIG_DIR/ — moving to $CONFIG_SOT_DIR/ (v2 SOT)."
+    mkdir -p "$CONFIG_SOT_DIR"
+    mv "$alt_path" "$sot_path"
+    return 0
+  fi
+
+  echo "[ERROR] PLUTAINER_CONFIG_FILE='$cfg' but no such file exists." >&2
+  echo "  Looked at:" >&2
+  echo "    $sot_path" >&2
+  echo "    $alt_path" >&2
+  local match
+  match=$(find "$CONFIG_SOT_DIR" "$ALT_CONFIG_DIR" -maxdepth 1 -type f -iname "$cfg" 2>/dev/null | head -1)
+  if [[ -n "$match" ]]; then
+    echo "  Did you mean: $(basename "$match") ? (filenames are case-sensitive on Linux)" >&2
+  else
+    echo "  Available cfgs in $CONFIG_SOT_DIR/:" >&2
+    if compgen -G "$CONFIG_SOT_DIR/*.cfg" > /dev/null; then
+      (cd "$CONFIG_SOT_DIR" && ls -1 *.cfg) | sed 's/^/    /' >&2
+    else
+      echo "    (none)" >&2
+    fi
+  fi
+  return 1
 }
 
 # Check that the mounted app/ volume is v2-shaped. On a fresh volume,
@@ -261,16 +353,52 @@ EOF
   echo "[INFO] Initialised fresh v2 volume at $PLUTAINER_APP_DIR"
 }
 
-# Extract the RCON password from the user's config file in configs/.
-# Sets RCON_PASSWORD. Requires CONFIG_PATH to be set.
+_rcon_missing_warning() {
+  echo "[WARN] Could not parse rcon_password from ${CONFIG_PATH}." >&2
+  echo "  Healthcheck and rcon-cli will not work until this is set." >&2
+  echo "  Expected format in your cfg file:" >&2
+  echo "    set rcon_password \"your_password_here\"" >&2
+  echo "  Single quotes and unquoted values are accepted; commented (//) lines are ignored." >&2
+  echo "  Do NOT set rcon_password via PLUTAINER_EXTRA_ARGS — Plutainer cannot read it back." >&2
+}
+
+# Extract the RCON password from the user's config file. Handles:
+#   set  rcon_password "value"      (double-quoted, default)
+#   seta rcon_password 'value'      (single-quoted)
+#   set  rcon_password value        (unquoted; value is first token)
+# Strips line comments (//...) before searching. Picks the last uncommented
+# match, in case the cfg overrides itself.
+# Sets RCON_PASSWORD on success; returns 1 + warning on failure.
 extract_rcon_password() {
+  RCON_PASSWORD=""
   if [[ ! -f "${CONFIG_PATH}" ]]; then
-    echo "[ERROR] Config file not found at ${CONFIG_PATH}" >&2
+    echo "[WARN] Config file not found at ${CONFIG_PATH} — cannot extract rcon_password." >&2
     return 1
   fi
-  RCON_PASSWORD=$(grep -v '^[[:space:]]*//' "${CONFIG_PATH}" | grep -i 'rcon_password' | sed -n 's/.*"\([^"]*\)".*/\1/p' | tail -1)
-  if [[ -z "${RCON_PASSWORD}" ]]; then
-    echo "[ERROR] Could not find 'rcon_password' in ${CONFIG_PATH}" >&2
+
+  local line
+  line=$(sed -e 's|//.*$||' "${CONFIG_PATH}" \
+    | grep -iE '^[[:space:]]*set[a]?[[:space:]]+rcon_password[[:space:]]+' \
+    | tail -1)
+
+  if [[ -z "$line" ]]; then
+    _rcon_missing_warning
+    return 1
+  fi
+
+  local dq_pat='"([^"]*)"'
+  local sq_pat="'([^']*)'"
+  if [[ "$line" =~ $dq_pat ]]; then
+    RCON_PASSWORD="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ $sq_pat ]]; then
+    RCON_PASSWORD="${BASH_REMATCH[1]}"
+  else
+    # Unquoted: token after 'set|seta rcon_password'
+    RCON_PASSWORD=$(echo "$line" | awk '{print $3}')
+  fi
+
+  if [[ -z "$RCON_PASSWORD" ]]; then
+    _rcon_missing_warning
     return 1
   fi
 }

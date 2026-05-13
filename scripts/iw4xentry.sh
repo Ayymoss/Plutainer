@@ -8,9 +8,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/game-config.sh"
 
-detect_game_type || exit 1
-check_volume_version || exit 1
-resolve_engine_config_dir || exit 1
+detect_game_type     || hold_indefinitely "detect_game_type failed."
+check_volume_version || hold_indefinitely "check_volume_version failed."
+resolve_engine_config_dir
+resolve_mod_config_dir
+resolve_config_layout
 
 SOURCE_DIR="$PLUTAINER_SOURCE_DIR"
 DEST_DIR="$PLUTAINER_GAMEFILES_DIR"
@@ -35,35 +37,27 @@ fi
 
 cd "$DEST_DIR"
 
-# --- Step 3: Fan-out configs/ → engine config dir ---
+# --- Step 3: Fan-out configs/ → engine + mod config dirs ---
 # No seed_configs call: iw4x has no bundled community seed.
-link_configs "$ENGINE_CONFIG_DIR"
+link_configs "$ENGINE_CONFIG_DIR" "$MOD_CONFIG_DIR"
 
-# --- Step 4: Validate Required Environment Variables ---
-MISSING_VAR=false
+# --- Step 4: Validate environment + ensure config file exists ---
 PLUTAINER_SERVER_NAME="${PLUTAINER_SERVER_NAME:-IW4x Docker Server}"
 
 if [[ "${PLUTAINER_GAME}" != "iw4x" ]]; then
-  echo "[ERROR] PLUTAINER_GAME must be 'iw4x' for the iw4x entrypoint." >&2
-  MISSING_VAR=true
+  hold_indefinitely "PLUTAINER_GAME must be 'iw4x' for the iw4x entrypoint."
 fi
 if [[ -z "${PLUTAINER_CONFIG_FILE:-}" ]]; then
-  echo "[ERROR] PLUTAINER_CONFIG_FILE is not set." >&2
-  echo "  > Filename of your server config (e.g. 'server.cfg')." >&2
-  MISSING_VAR=true
+  hold_indefinitely "PLUTAINER_CONFIG_FILE is not set. Specify the filename of your server config (e.g. 'server.cfg')."
 fi
-
-if [[ "$MISSING_VAR" == "true" ]]; then
-  echo "-------------------------------------------------" >&2
-  echo "Configuration error. Halting startup." >&2
-  sleep 10
-  exit 1
+if ! ensure_config_present; then
+  hold_indefinitely "Config file not found. See [ERROR] above."
 fi
 
 # --- Step 5: Resolve port ---
 if [[ -z "${PLUTAINER_PORT:-}" ]]; then
   echo "PLUTAINER_PORT not set, using default for iw4x..."
-  resolve_default_port "iw4x" || { sleep 10; exit 1; }
+  resolve_default_port "iw4x" || hold_indefinitely "Could not resolve default port."
   PLUTAINER_PORT="${DEFAULT_PORT}"
   echo "Default port set to ${PLUTAINER_PORT}"
 fi
@@ -91,9 +85,9 @@ fi
 
 CMD_ARGS+=(+map_rotate)
 
-# --- Step 7: Launch ---
+# --- Step 7: Launch (with 30s crash throttle) ---
 /home/plutainer/.plutainer/log-watcher.sh &
 
 echo "Starting iw4x Server: ${PLUTAINER_SERVER_NAME}"
 echo "EXECUTING: wine iw4x.exe ${CMD_ARGS[*]}"
-exec wine iw4x.exe "${CMD_ARGS[@]}"
+launch_game wine iw4x.exe "${CMD_ARGS[@]}"
