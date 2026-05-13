@@ -14,10 +14,11 @@ on:
 jobs:
   build-and-push:
     environment: production
-    # Switch to `ubuntu-24.04-arm` (native aarch64) and drop the
-    # setup-qemu-action step below for a 3-5x faster build, if the repo or
-    # org has access to the ARM-hosted runner pool.
-    runs-on: ubuntu-latest
+    # Native aarch64 runner - free for public repos (this one is public).
+    # The Multi-Stage Dockerfile compiles build2 and iw4x-launcher from source,
+    # so emulated QEMU build on ubuntu-latest would take 60-90 min. Native
+    # aarch64 cuts that to ~20-30 min and avoids QEMU edge cases entirely.
+    runs-on: ubuntu-24.04-arm
 
     permissions:
       contents: read
@@ -26,11 +27,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
