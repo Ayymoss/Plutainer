@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.sh text eol=lf
+scripts/rcon-cli text eol=lf
+Dockerfile text eol=lf
+*.py text eol=lf

@@ -75,7 +75,8 @@ RUN set -eux; \
     find /home/plutainer/.plutainer/seed-configs -type f \( -iname '*.bat' -o -iname '*.sh' -o -iname 'README*' \) -delete
 
 COPY --chown=plutainer:plutainer scripts/ .
-RUN chmod +x entrypoint.sh healthcheck.sh plutoentry.sh iw4xentry.sh alterentry.sh log-watcher.sh rcon-cli game-config.sh
+RUN chmod +x entrypoint.sh healthcheck.sh plutoentry.sh iw4xentry.sh alterentry.sh \
+              log-watcher.sh rcon-cli game-config.sh migrate-v1-to-v2.sh
 
 USER root
 RUN ln -s /home/plutainer/.plutainer/rcon-cli /usr/local/bin/rcon-cli
@@ -83,7 +84,7 @@ USER plutainer
 
 STOPSIGNAL SIGKILL
 
-HEALTHCHECK --interval=1m --timeout=10s --start-period=1m --retries=3 \
+HEALTHCHECK --interval=1m --timeout=10s --start-period=5m --retries=3 \
   CMD ./healthcheck.sh
 
 ENTRYPOINT ["./entrypoint.sh"]
