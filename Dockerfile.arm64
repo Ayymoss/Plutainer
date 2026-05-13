@@ -33,17 +33,19 @@ FROM --platform=linux/arm64 debian:trixie-slim AS cpp-builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates wget git \
+        ca-certificates curl wget git \
         g++ gcc make \
         tar xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # build2 ships no aarch64-linux binaries; the install script compiles the
-# toolchain from source. --trust yes accepts the cppget.org repo cert without
-# manual fingerprint entry (acceptable inside a one-shot build container).
-RUN wget -q https://download.build2.org/0.18.1/build2-install-0.18.1.sh \
- && sh build2-install-0.18.1.sh --trust yes --no-check --jobs $(nproc) --yes /usr/local \
- && rm build2-install-0.18.1.sh
+# toolchain from source. The installer uses curl internally to fetch the
+# source tarball (see check_cmd curl in build2-install-*.sh). --trust yes
+# accepts the cppget.org repo cert without manual fingerprint entry
+# (acceptable inside a one-shot build container).
+RUN curl -fL -o build2-install.sh https://download.build2.org/0.18.1/build2-install-0.18.1.sh \
+ && sh build2-install.sh --trust yes --no-check --jobs $(nproc) --yes /usr/local \
+ && rm build2-install.sh
 
 WORKDIR /build
 RUN git clone --depth 1 https://github.com/iw4x/launcher.git iw4x-launcher
