@@ -31,10 +31,10 @@ shim_env_vars() {
   local suffix prefix old new
   for suffix in GAME CONFIG_FILE PORT SERVER_NAME MOD AUTO_UPDATE HEALTHCHECK SKIP_SEED EXTRA_ARGS; do
     new="PLUTAINER_$suffix"
-    [[ -n "${!new}" ]] && continue
+    [[ -n "${!new:-}" ]] && continue
     for prefix in PLUTO IW4X ALTER; do
       old="${prefix}_${suffix}"
-      if [[ -n "${!old}" ]]; then
+      if [[ -n "${!old:-}" ]]; then
         printf -v "$new" '%s' "${!old}"
         export "$new"
         echo "[DEPRECATED] ${old} is renamed to ${new}; old name still accepted for now." >&2
@@ -60,7 +60,7 @@ derive_family() {
 detect_game_type() {
   shim_env_vars
 
-  if [[ -z "${PLUTAINER_GAME}" ]]; then
+  if [[ -z "${PLUTAINER_GAME:-}" ]]; then
     echo "[ERROR] No game specified. Set PLUTAINER_GAME (e.g. t6zm, iw4x, t7x)." >&2
     return 1
   fi
@@ -77,9 +77,9 @@ detect_game_type() {
     alterware) BASE_GAME="${GAME_NAME}" ;;
   esac
 
-  CONFIG_FILE="${PLUTAINER_CONFIG_FILE}"
-  CUSTOM_PORT="${PLUTAINER_PORT}"
-  HEALTHCHECK_FLAG="${PLUTAINER_HEALTHCHECK}"
+  CONFIG_FILE="${PLUTAINER_CONFIG_FILE:-}"
+  CUSTOM_PORT="${PLUTAINER_PORT:-}"
+  HEALTHCHECK_FLAG="${PLUTAINER_HEALTHCHECK:-}"
 }
 
 # Set DEFAULT_PORT based on BASE_GAME (or the arg).
