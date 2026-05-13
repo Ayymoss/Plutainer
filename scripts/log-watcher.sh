@@ -38,21 +38,55 @@ mkdir -p "$STABLE_DIR"
 
 # Atomically place a symlink at $link -> $rel_target. Works whether $link
 # currently does not exist, is a regular file (legacy stub), or is a symlink.
+# If $link is a directory (typically created by a sidecar bind-mounting a
+# non-existent log file, which makes Docker auto-create a dir on the host),
+# strip it first — mv -T refuses to replace a directory. Without this strip,
+# mv fails every poll and litters $STABLE_DIR with .XXX temp symlinks.
 place_symlink() {
   local link="$1" rel_target="$2"
   local tmp
+  if [[ -d "$link" && ! -L "$link" ]]; then
+    echo "[log-watcher] stray directory at $link (sidecar bind-mount artifact); removing"
+    if ! rmdir -- "$link" 2>/dev/null && ! rm -rf -- "$link" 2>/dev/null; then
+      echo "[log-watcher] ERROR: cannot remove $link — likely root-owned with root-owned contents." >&2
+      echo "[log-watcher] Fix sidecar volume to mount the logs/ DIRECTORY, not individual log FILES." >&2
+      return 1
+    fi
+  fi
   tmp=$(mktemp -u -p "$STABLE_DIR" ".$(basename "$link").XXXXXX")
   ln -s "$rel_target" "$tmp"
   mv -Tf "$tmp" "$link"
 }
 
-# Startup heal: any dangling symlinks from prior container runs become empty
-# stub files so sidecar readers always see a file. If the old target is still
-# valid, leave the symlink alone — IW4MAdmin can keep reading continuously
-# until a fresh target is identified by the poll loop below.
+# Startup heal:
+#   - Dangling symlinks from prior runs → empty stub files so sidecar readers
+#     always see a file. If the old target is still valid, leave the symlink
+#     alone — IW4MAdmin can keep reading continuously until a fresh target is
+#     identified by the poll loop below.
+#   - Stray directories (sidecar bind-mount of a non-existent log makes Docker
+#     auto-create a dir on the host) → remove. Otherwise place_symlink's
+#     mv -Tf fails forever and the namespace silts up with .XXX temp symlinks.
+#   - Stray orphan temp symlinks from prior failed place_symlink runs → remove.
+if compgen -G "$STABLE_DIR/.*" > /dev/null 2>&1; then
+  for entry in "$STABLE_DIR"/.*; do
+    base=$(basename "$entry")
+    [[ "$base" == "." || "$base" == ".." ]] && continue
+    if [[ -L "$entry" && "$base" =~ ^\..+\.[A-Za-z0-9]{6}$ ]]; then
+      echo "[log-watcher] removing orphan temp symlink: $base"
+      rm -f -- "$entry"
+    fi
+  done
+fi
 if compgen -G "$STABLE_DIR/*" > /dev/null; then
   for entry in "$STABLE_DIR"/*; do
     [[ -e "$entry" || -L "$entry" ]] || continue
+    if [[ -d "$entry" && ! -L "$entry" ]]; then
+      echo "[log-watcher] stray directory at $(basename "$entry") (sidecar bind-mount artifact); removing"
+      if ! rmdir -- "$entry" 2>/dev/null && ! rm -rf -- "$entry" 2>/dev/null; then
+        echo "[log-watcher] WARN: cannot remove $(basename "$entry") — likely root-owned with root-owned contents. Fix sidecar volume to mount the logs/ DIRECTORY, not individual log FILES." >&2
+      fi
+      continue
+    fi
     if [[ -L "$entry" && ! -e "$entry" ]]; then
       echo "[log-watcher] healing dangling symlink: $(basename "$entry")"
       rm -f "$entry"
