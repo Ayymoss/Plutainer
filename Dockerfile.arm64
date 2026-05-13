@@ -1,0 +1,154 @@
+# ARM64 variant (Raspberry Pi 5, Ampere, Apple silicon under Linux).
+#
+# Architecture translation strategy:
+#   * x86_64 Windows PE (Plutonium/IW4x/T7x .exe)  -> Wine 11 thunked WoW64 +
+#     libarm64ecfex.dll (FEX as CPU plug-in, shipped by Hangover 11.4).
+#   * Linux helper CLIs (plutonium-updater, iw4x-launcher) -> built natively
+#     for aarch64 from source. Upstream ships no aarch64-linux release, so the
+#     alternative would be running their x86_64 binaries under box64; building
+#     native instead drops the user-space x86 emulator from the runtime image.
+#
+# Base: Debian 13 trixie. Hangover publishes official .deb bundles for this
+# exact distro/arch, so Wine 11 is consumed pre-built.
+
+# ---------------------------------------------------------------------------
+# Stage 1: build plutonium-updater (Rust) natively for aarch64-linux.
+# ---------------------------------------------------------------------------
+FROM --platform=linux/arm64 rust:1-trixie AS rust-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git ca-certificates pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+RUN git clone --depth 1 https://github.com/mxve/plutonium-updater.rs.git
+WORKDIR /build/plutonium-updater.rs
+RUN cargo build --release
+
+# ---------------------------------------------------------------------------
+# Stage 2: build iw4x-launcher (C++ via build2) natively for aarch64-linux.
+# ---------------------------------------------------------------------------
+FROM --platform=linux/arm64 debian:trixie-slim AS cpp-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl wget git \
+        g++ gcc make \
+        tar xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# build2 ships no aarch64-linux binaries; the install script compiles the
+# toolchain from source. The installer uses curl internally to fetch the
+# source tarball (see check_cmd curl in build2-install-*.sh). --trust yes
+# accepts the cppget.org repo cert without manual fingerprint entry
+# (acceptable inside a one-shot build container).
+RUN curl -fL -o build2-install.sh https://download.build2.org/0.18.1/build2-install-0.18.1.sh \
+ && sh build2-install.sh --trust yes --no-check --jobs $(nproc) --yes /usr/local \
+ && rm build2-install.sh
+
+WORKDIR /build
+RUN git clone --depth 1 https://github.com/iw4x/launcher.git iw4x-launcher
+WORKDIR /build/iw4x-launcher
+
+# bindist-gcc-static.sh prompts for confirmation; -y answers yes. The script
+# emits a flattened .tar.xz under dist-output/ containing only the binary.
+RUN sh bindist-gcc-static.sh -y -j $(nproc) "launcher@https://github.com/iw4x/launcher.git#main"
+
+RUN mkdir -p /out \
+ && tar -xJf dist-output/*.tar.xz -C /out \
+ && find /out -type f -name 'launcher' -exec mv {} /out/iw4x-launcher \;
+
+# ---------------------------------------------------------------------------
+# Stage 3: runtime image.
+# ---------------------------------------------------------------------------
+FROM --platform=linux/arm64 debian:trixie-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        wget \
+        tar \
+        xz-utils \
+        unzip \
+        jq \
+        python3 \
+        procps \
+        findutils \
+        xvfb \
+        xauth \
+    && rm -rf /var/lib/apt/lists/*
+
+# Hangover 11.4 = Wine 11 + FEX 2603 + box64 as Wine CPU plug-ins (the
+# in-Wine box64 is unrelated to a Linux-user-space box64; we do not need
+# the latter because the helper CLIs are native aarch64).
+RUN HANGOVER_TAG="hangover-11.4" \
+ && HANGOVER_TAR="hangover_11.4_debian13_trixie_arm64.tar" \
+ && wget -q "https://github.com/AndreRH/hangover/releases/download/${HANGOVER_TAG}/${HANGOVER_TAR}" \
+ && mkdir hangover-pkg \
+ && tar -xf "${HANGOVER_TAR}" -C hangover-pkg \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends ./hangover-pkg/*.deb \
+ && rm -rf hangover-pkg "${HANGOVER_TAR}" /var/lib/apt/lists/*
+
+RUN useradd -m plutainer
+RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+
+ENV WINEDLLOVERRIDES="mscoree,mshtml=" \
+    DISPLAY=:99
+
+USER plutainer
+WORKDIR /home/plutainer/.plutainer
+
+RUN Xvfb :99 -screen 0 320x240x24 & \
+    sleep 1 && \
+    wineboot -u && \
+    wineserver -w && \
+    pkill -f Xvfb || true && \
+    rm -f /tmp/.X99-lock
+
+COPY --from=rust-builder --chown=plutainer:plutainer \
+     /build/plutonium-updater.rs/target/release/plutonium-updater \
+     /home/plutainer/.plutainer/plutonium-updater
+
+COPY --from=cpp-builder --chown=plutainer:plutainer \
+     /out/iw4x-launcher \
+     /home/plutainer/.plutainer/iw4x-launcher
+
+# Bundle community config seeds for first-run scaffolding. Entrypoint copies
+# these into the bind mount on start with cp -n (never overwrites user files).
+# Source repos: xerxes-at/T{4,5,6}ServerConfig*, xerxes-at/IW5ServerConfig,
+# Dss0/t7-server-config. Disable per-stack via PLUTO_SKIP_SEED/ALTER_SKIP_SEED.
+RUN set -eux; \
+    mkdir -p seed-configs/{t4,t5,t6,iw5,t7x}; \
+    cd /tmp; \
+    wget -q -O t4.zip   https://github.com/xerxes-at/T4ServerConfigs/archive/refs/heads/main.zip   && unzip -q t4.zip; \
+    wget -q -O t5.zip   https://github.com/xerxes-at/T5ServerConfig/archive/refs/heads/master.zip && unzip -q t5.zip; \
+    wget -q -O t6.zip   https://github.com/xerxes-at/T6ServerConfigs/archive/refs/heads/master.zip && unzip -q t6.zip; \
+    wget -q -O iw5.zip  https://github.com/xerxes-at/IW5ServerConfig/archive/refs/heads/master.zip && unzip -q iw5.zip; \
+    wget -q -O t7x.zip  https://github.com/Dss0/t7-server-config/archive/refs/heads/main.zip && unzip -q t7x.zip; \
+    cp -r T4ServerConfigs-main/main/.                              /home/plutainer/.plutainer/seed-configs/t4/; \
+    cp -r T5ServerConfig-master/localappdata/Plutonium/storage/t5/. /home/plutainer/.plutainer/seed-configs/t5/; \
+    cp -r T6ServerConfigs-master/localappdata/Plutonium/storage/t6/. /home/plutainer/.plutainer/seed-configs/t6/; \
+    cp -r IW5ServerConfig-master/admin/.                            /home/plutainer/.plutainer/seed-configs/iw5/; \
+    cp -r t7-server-config-main/zone /home/plutainer/.plutainer/seed-configs/t7x/; \
+    cp -r t7-server-config-main/t7x  /home/plutainer/.plutainer/seed-configs/t7x/; \
+    rm -rf /tmp/*.zip /tmp/T4ServerConfigs-main /tmp/T5ServerConfig-master /tmp/T6ServerConfigs-master /tmp/IW5ServerConfig-master /tmp/t7-server-config-main; \
+    find /home/plutainer/.plutainer/seed-configs -type d -iname '*REFERENCE*' -exec rm -rf {} +; \
+    find /home/plutainer/.plutainer/seed-configs -type f \( -iname '*.bat' -o -iname '*.sh' -o -iname 'README*' \) -delete
+
+COPY --chown=plutainer:plutainer scripts/ .
+RUN chmod +x entrypoint.sh healthcheck.sh plutoentry.sh iw4xentry.sh alterentry.sh \
+              log-watcher.sh rcon-cli game-config.sh migrate-v1-to-v2.sh
+
+USER root
+RUN ln -s /home/plutainer/.plutainer/rcon-cli /usr/local/bin/rcon-cli
+USER plutainer
+
+STOPSIGNAL SIGKILL
+
+HEALTHCHECK --interval=1m --timeout=10s --start-period=1m --retries=3 \
+  CMD ./healthcheck.sh
+
+ENTRYPOINT ["./entrypoint.sh"]
