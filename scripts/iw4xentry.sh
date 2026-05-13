@@ -37,7 +37,10 @@ fi
 
 cd "$DEST_DIR"
 
-# --- Step 3: Fan-out configs/ → engine + mod config dirs ---
+# --- Step 3a: Auto-lift any user-placed real cfg from engine path ---
+auto_lift_user_config
+
+# --- Step 3b: Fan-out configs/ → engine + mod config dirs ---
 # No seed_configs call: iw4x has no bundled community seed.
 link_configs "$ENGINE_CONFIG_DIR" "$MOD_CONFIG_DIR"
 

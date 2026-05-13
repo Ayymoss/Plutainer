@@ -59,7 +59,10 @@ fi
 
 cd "$DEST_DIR"
 
-# --- Step 3: Seed default configs from bundled community repo ---
+# --- Step 3a: Auto-lift any user-placed real cfg from engine path ---
+auto_lift_user_config
+
+# --- Step 3b: Seed default configs from bundled community repo ---
 # t7x seed bundle has two top-level dirs: `zone/` (configs) and `t7x/` (lobby
 # scripts). cfg_root_rel="zone" lifts top-level `zone/*.cfg` files into
 # CONFIG_SOT_DIR; everything else stays under runtime/gamefiles/.

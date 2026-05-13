@@ -61,7 +61,10 @@ fi
 
 cd "$PLUTAINER_PLUTONIUM_DIR"
 
-# --- Step 3: Seed default configs from bundled community repos ---
+# --- Step 3a: Auto-lift any user-placed real cfg from engine path ---
+auto_lift_user_config
+
+# --- Step 3b: Seed default configs from bundled community repos ---
 if [[ "${PLUTAINER_SKIP_SEED:-}" != "true" ]]; then
   case "$BASE_GAME" in
     t4)    seed_configs t4 "$PLUTAINER_GAMEFILES_DIR/main"           "" ;;

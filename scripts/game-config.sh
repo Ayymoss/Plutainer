@@ -254,32 +254,43 @@ link_configs() {
   done
 }
 
-# Ensure $CONFIG_FILE exists at the SOT location before launch.
-#   - If at SOT: ok.
-#   - If at the ALT location as a real (non-symlink) file: move it to SOT,
-#     log the auto-lift, ok.
-#   - Otherwise: refuse with a case-sensitive find hint.
+# If the user has placed a REAL (non-symlink) cfg file at the engine path,
+# treat that as authoritative and move it into the SOT location. Engine-path
+# real file is the strongest signal of user intent: they manually wrote it
+# where the game reads from. Overrides anything already in SOT.
+# Runs BEFORE seed_configs so seed (cp -n) doesn't paper over user intent.
+# Requires CONFIG_SOT_DIR, ALT_CONFIG_DIR, CONFIG_FILE set.
+auto_lift_user_config() {
+  local cfg="${CONFIG_FILE:-}"
+  [[ -z "$cfg" ]] && return 0
+  [[ "${PLUTAINER_USE_RAW_CONFIGS:-}" == "true" ]] && return 0
+
+  local alt_path="$ALT_CONFIG_DIR/$cfg"
+  local sot_path="$CONFIG_SOT_DIR/$cfg"
+
+  if [[ -f "$alt_path" && ! -L "$alt_path" ]]; then
+    echo "[INFO] Auto-lift: real file at $alt_path — moving to $sot_path (v2 SOT)."
+    mkdir -p "$CONFIG_SOT_DIR"
+    mv -f "$alt_path" "$sot_path"
+  fi
+}
+
+# Verify $CONFIG_FILE exists at the SOT location. Returns 1 with a
+# case-insensitive find hint if absent. Run AFTER seed_configs + link_configs
+# so any gap-fill has had its chance.
 # Requires CONFIG_SOT_DIR, ALT_CONFIG_DIR, CONFIG_FILE set.
 ensure_config_present() {
   local cfg="$CONFIG_FILE"
   local sot_path="$CONFIG_SOT_DIR/$cfg"
-  local alt_path="$ALT_CONFIG_DIR/$cfg"
 
   if [[ -e "$sot_path" ]]; then
-    return 0
-  fi
-
-  if [[ -f "$alt_path" && ! -L "$alt_path" ]]; then
-    echo "[INFO] Auto-lift: found $cfg at $ALT_CONFIG_DIR/ — moving to $CONFIG_SOT_DIR/ (v2 SOT)."
-    mkdir -p "$CONFIG_SOT_DIR"
-    mv "$alt_path" "$sot_path"
     return 0
   fi
 
   echo "[ERROR] PLUTAINER_CONFIG_FILE='$cfg' but no such file exists." >&2
   echo "  Looked at:" >&2
   echo "    $sot_path" >&2
-  echo "    $alt_path" >&2
+  echo "    $ALT_CONFIG_DIR/$cfg" >&2
   local match
   match=$(find "$CONFIG_SOT_DIR" "$ALT_CONFIG_DIR" -maxdepth 1 -type f -iname "$cfg" 2>/dev/null | head -1)
   if [[ -n "$match" ]]; then
