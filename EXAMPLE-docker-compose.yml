@@ -1,6 +1,6 @@
 services:
   iw4xmp-1:
-    image: ghcr.io/ayymoss/plutainer:main
+    image: ghcr.io/ayymoss/plutainer:v2
     container_name: iw4xmp-1
     restart: unless-stopped
     ports:
@@ -18,7 +18,7 @@ services:
       - games-net
 
   t6zm-1:
-    image: ghcr.io/ayymoss/plutainer:main
+    image: ghcr.io/ayymoss/plutainer:v2
     container_name: t6zm-1
     hostname: t6zm-1
     restart: unless-stopped
@@ -36,7 +36,7 @@ services:
       - games-net
 
   t6mp-1:
-    image: ghcr.io/ayymoss/plutainer:main
+    image: ghcr.io/ayymoss/plutainer:v2
     container_name: t6mp-1
     hostname: t6mp-1
     restart: unless-stopped
@@ -54,7 +54,7 @@ services:
       - games-net
 
   t4sp-1:
-    image: ghcr.io/ayymoss/plutainer:main
+    image: ghcr.io/ayymoss/plutainer:v2
     container_name: t4sp-1
     hostname: t4sp-1
     restart: unless-stopped
@@ -72,7 +72,7 @@ services:
       - games-net
 
   t4mp-1:
-    image: ghcr.io/ayymoss/plutainer:main
+    image: ghcr.io/ayymoss/plutainer:v2
     container_name: t4mp-1
     hostname: t4mp-1
     restart: unless-stopped
@@ -90,7 +90,7 @@ services:
       - games-net
 
   t5mp-1:
-    image: ghcr.io/ayymoss/plutainer:main
+    image: ghcr.io/ayymoss/plutainer:v2
     container_name: t5mp-1
     hostname: t5mp-1
     restart: unless-stopped
@@ -109,7 +109,7 @@ services:
       - games-net
 
   t5sp-1:
-    image: ghcr.io/ayymoss/plutainer:main
+    image: ghcr.io/ayymoss/plutainer:v2
     container_name: t5sp-1
     hostname: t5sp-1
     restart: unless-stopped
@@ -129,7 +129,7 @@ services:
       - games-net
 
   iw5mp-1:
-    image: ghcr.io/ayymoss/plutainer:main
+    image: ghcr.io/ayymoss/plutainer:v2
     container_name: iw5mp-1
     hostname: iw5mp-1
     restart: unless-stopped
@@ -147,7 +147,7 @@ services:
       - games-net
 
   t7x-zm-1:
-    image: ghcr.io/ayymoss/plutainer:main
+    image: ghcr.io/ayymoss/plutainer:v2
     container_name: t7x-zm-1
     restart: unless-stopped
     ports:

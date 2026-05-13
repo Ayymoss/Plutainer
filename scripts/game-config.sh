@@ -241,7 +241,7 @@ tool against your bind mount:
   docker run --rm \
     -v <YOUR_APP_VOLUME>:/home/plutainer/app \
     --entrypoint /home/plutainer/.plutainer/migrate-v1-to-v2.sh \
-    ghcr.io/ayymoss/plutainer:main
+    ghcr.io/ayymoss/plutainer:v2
 
 (For a docker-compose deployment, <YOUR_APP_VOLUME> is the path bound to
 /home/plutainer/app — e.g. ./t6zm-1)

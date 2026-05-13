@@ -2,9 +2,9 @@
 
 This repository contains the necessary files to build and run dedicated game servers for Plutonium, IW4x, and Alterware using Docker. The image is designed to be flexible and configurable through environment variables.
 
-The container is available on GitHub Container Registry: `ghcr.io/ayymoss/plutainer:main`
+The container is available on GitHub Container Registry: `ghcr.io/ayymoss/plutainer:v2`
 
-> **Tag note (v2):** The `main` tag tracks the new v2 volume layout and the unified `PLUTAINER_*` environment variables. The legacy `latest` tag is deprecated and will not receive further updates. If you are migrating an existing deployment, see [Upgrading from v1](#upgrading-from-v1).
+> **Tag note (v2):** The `v2` tag tracks the new v2 volume layout and the unified `PLUTAINER_*` environment variables. It is built from the `v2-layout` branch and is intentionally separate from `latest`. The `latest` tag continues to point at the older v1 image (legacy `PLUTO_*`/`IW4X_*`/`ALTER_*` env vars, flat `app/gamefiles/` + `app/plutonium/` layout) and is deprecated — no further updates. If you are migrating an existing deployment, see [Upgrading from v1](#upgrading-from-v1). Opt in by changing your `image:` line to `ghcr.io/ayymoss/plutainer:v2`.
 
 ## Overview
 
@@ -133,7 +133,7 @@ Run the bundled migration tool once per volume:
 docker run --rm \
   -v <YOUR_APP_VOLUME>:/home/plutainer/app \
   --entrypoint /home/plutainer/.plutainer/migrate-v1-to-v2.sh \
-  ghcr.io/ayymoss/plutainer:main
+  ghcr.io/ayymoss/plutainer:v2
 ```
 
 Replace `<YOUR_APP_VOLUME>` with the path bound to `/home/plutainer/app` in your compose file (e.g. `./t6zm-1`). The tool:
@@ -151,7 +151,7 @@ Add `--dry-run` after the entrypoint to preview without modifying anything:
 docker run --rm \
   -v <YOUR_APP_VOLUME>:/home/plutainer/app \
   --entrypoint /home/plutainer/.plutainer/migrate-v1-to-v2.sh \
-  ghcr.io/ayymoss/plutainer:main --dry-run
+  ghcr.io/ayymoss/plutainer:v2 --dry-run
 ```
 
 If you also have IW4MAdmin sidecar mounts pointing at log paths like `./t6zm-1/plutonium/storage/...`, update them to `./t6zm-1/runtime/plutonium/storage/...` — or better, switch to the stable [log symlink directory](#log-symlinks).

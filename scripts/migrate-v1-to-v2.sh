@@ -9,7 +9,7 @@
 #   docker run --rm \
 #     -v <your_app_volume>:/home/plutainer/app \
 #     --entrypoint /home/plutainer/.plutainer/migrate-v1-to-v2.sh \
-#     ghcr.io/ayymoss/plutainer:main
+#     ghcr.io/ayymoss/plutainer:v2
 #
 # Add --dry-run as the first argument to preview without making changes.
 #

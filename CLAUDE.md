@@ -29,8 +29,13 @@ There are no automated tests or linters. The CI pipeline (`.github/workflows/doc
 
 ## Tags
 
-- `ghcr.io/ayymoss/plutainer:main` — current v2 layout. Use this for new deployments.
-- `ghcr.io/ayymoss/plutainer:latest` — deprecated v1 layout. No further updates.
+- `ghcr.io/ayymoss/plutainer:v2` — built from `v2-layout` branch. New volume layout + unified `PLUTAINER_*` env vars. Opt-in. CI workflow tags it only on pushes to `v2-layout`; never promotes to `:latest`.
+- `ghcr.io/ayymoss/plutainer:latest` — built from `main`. Deprecated v1 layout. No further v2 work merges here; bug-only updates if any.
+
+CI logic in `.github/workflows/docker-publish.yml`:
+- `type=raw,value=latest,enable={{is_default_branch}}` — only on main.
+- `type=raw,value=v2,enable=${{ github.ref == 'refs/heads/v2-layout' }}` — only on v2-layout.
+- Both branches also get `:sha-<short>`. Branches stay completely separated.
 
 ## Architecture
 

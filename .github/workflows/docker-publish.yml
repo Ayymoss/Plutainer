@@ -2,7 +2,7 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "v2-layout" ]
     paths-ignore:
       - 'README.md'
       - 'LICENSE'
@@ -39,6 +39,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=v2,enable=${{ github.ref == 'refs/heads/v2-layout' }}
             type=ref,event=tag
             type=ref,event=pr
             type=sha
