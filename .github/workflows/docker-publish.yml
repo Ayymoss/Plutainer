@@ -1,10 +1,27 @@
 name: Build and Push Docker Image
 
+# Multi-arch build pattern from the official Docker docs:
+# https://docs.docker.com/build/ci/github-actions/multi-platform/
+#
+# Two-stage:
+#   1. `build` matrix runs each platform on its native runner in parallel.
+#      Pushes a single-platform image by digest only (no human tag).
+#      Saves the digest as a workflow artifact.
+#   2. `merge` downloads both digest artifacts, generates the tag list once,
+#      and uses `docker buildx imagetools create` to stitch the per-platform
+#      digests into a single multi-arch manifest published as :latest, :v2,
+#      and any release/PR/sha-derived tags.
+#
+# Why: native arm64 runners avoid the 60-90 min QEMU emulation cost while
+# still producing a standard multi-arch manifest so users pull :latest and
+# get the right platform automatically.
+
 on:
   push:
-    branches: [ "main", "v2-layout" ]
+    branches: [ "main" ]
     paths-ignore:
       - 'README.md'
+      - 'MIGRATION.md'
       - 'LICENSE'
       - '.dockerignore'
       - 'EXAMPLE-docker-compose.yml'
@@ -12,10 +29,25 @@ on:
     types: [published]
   workflow_dispatch:
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
-  build-and-push:
-    environment: production
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runs-on: ubuntu-latest
+            dockerfile: Dockerfile
+            arch: amd64
+          - platform: linux/arm64
+            runs-on: ubuntu-24.04-arm
+            dockerfile: Dockerfile.arm64
+            arch: arm64
+    runs-on: ${{ matrix.runs-on }}
 
     permissions:
       contents: read
@@ -23,12 +55,72 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          # Attestations produce untagged manifest entries in GHCR. Off to
+          # keep the package page clean. Re-enable per-arg if/when we want
+          # SBOM / provenance signing.
+          provenance: false
+          sbom: false
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -36,19 +128,20 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=v2,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v2-layout' }}
+            type=raw,value=v2,enable={{is_default_branch}}
             type=ref,event=tag
             type=ref,event=pr
             type=sha
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
