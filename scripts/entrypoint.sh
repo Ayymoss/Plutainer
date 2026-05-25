@@ -19,6 +19,28 @@ echo
 echo "Brought to you by Ayymoss"
 echo
 
+cat >&2 << 'EOF'
+========================================================================
+[DEPRECATED] You are running ghcr.io/ayymoss/plutainer:v1-final.
+
+This tag is FROZEN. No further updates, fixes, or security patches
+will be published for v1. The :latest tag now points at v2, which has
+a new volume layout and unified PLUTAINER_* environment variables.
+
+You have two paths:
+
+  Stay on v1
+    Keep your compose as-is. Pin image: ghcr.io/ayymoss/plutainer:v1-final
+    (You can suppress this banner by using :v1-final explicitly.)
+
+  Migrate to v2 (recommended)
+    See: https://github.com/Ayymoss/Plutainer/blob/main/MIGRATION.md
+
+Container will continue starting in 10 seconds...
+========================================================================
+EOF
+sleep 10
+
 if [[ -n "${PLUTO_GAME}" ]]; then
   echo "Plutonium game type detected. Handing off to Plutonium entrypoint..."
   exec /home/plutainer/.plutainer/plutoentry.sh

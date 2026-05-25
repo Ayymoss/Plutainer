@@ -2,14 +2,12 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "v1-final" ]
     paths-ignore:
       - 'README.md'
       - 'LICENSE'
       - '.dockerignore'
       - 'EXAMPLE-docker-compose.yml'
-  release:
-    types: [published]
   workflow_dispatch:
 
 jobs:
@@ -38,9 +36,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
-            type=ref,event=pr
+            type=raw,value=v1-final,enable=${{ github.ref == 'refs/heads/v1-final' }}
+            type=raw,value=v1,enable=${{ github.ref == 'refs/heads/v1-final' }}
             type=sha
 
       - name: Build and push Docker image
