@@ -30,8 +30,8 @@ a new volume layout and unified PLUTAINER_* environment variables.
 You have two paths:
 
   Stay on v1
-    Keep your compose as-is. Pin image: ghcr.io/ayymoss/plutainer:v1-final
-    (You can suppress this banner by using :v1-final explicitly.)
+    Pin image: ghcr.io/ayymoss/plutainer:v1-final
+    This banner will continue to appear every start until you migrate.
 
   Migrate to v2 (recommended)
     See: https://github.com/Ayymoss/Plutainer/blob/main/MIGRATION.md
