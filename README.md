@@ -2,9 +2,13 @@
 
 This repository contains the necessary files to build and run dedicated game servers for Plutonium, IW4x, and Alterware using Docker. The image is designed to be flexible and configurable through environment variables.
 
-The container is available on GitHub Container Registry: `ghcr.io/ayymoss/plutainer:v2`
+The container is available on GitHub Container Registry: `ghcr.io/ayymoss/plutainer:latest`
 
-> **Tag note (v2):** The `v2` tag is a **breaking change** from `latest`. It introduces a new volume layout, unified `PLUTAINER_*` environment variables (the legacy `PLUTO_*`/`IW4X_*`/`ALTER_*` prefixes are **not accepted**), and stricter startup validation. It is built from the `v2-layout` branch and is intentionally separate from `latest` — the two tags do not share builds. The `latest` tag continues to point at the older v1 image (legacy env vars, flat `app/gamefiles/` + `app/plutonium/` layout) and is deprecated; no further updates. If you are migrating an existing deployment, see [Upgrading from v1](#upgrading-from-v1). Opt in by changing your `image:` line to `ghcr.io/ayymoss/plutainer:v2`.
+> **Tag layout:**
+> - `:latest` (and the `:v2` alias) — current Plutainer v2. New volume layout, unified `PLUTAINER_*` environment variables. Built from `main`.
+> - `:v1-final` (and the `:v1` alias) — frozen snapshot of the old v1 image. Legacy `PLUTO_*`/`IW4X_*`/`ALTER_*` env vars, flat `app/gamefiles/` + `app/plutonium/` layout. Shows a deprecation banner on every start. No further updates, fixes, or security patches.
+>
+> **Upgrading from v1?** See [MIGRATION.md](MIGRATION.md) — covers the env var rename, the volume migration command (one `docker run`), and how to pin `:v1-final` if you want to defer the migration.
 
 ## Overview
 
@@ -131,34 +135,22 @@ You can toggle this between restarts. Plutainer doesn't migrate files when you f
 
 ### Upgrading from v1
 
-If you have an existing deployment running the older `:latest` tag, your `app/` volume is in the **v1 layout** (no `configs/` or `runtime/` dirs, `gamefiles/` and `plutonium/` at the top level). The v2 container will refuse to start against a v1 volume — running it produces a clear error pointing to this section.
+If you have an existing deployment that was running an older `:latest` (now `:v1-final`), pulling the new `:latest` (v2) refuses to start: v2 detects either v1 environment variables (`PLUTO_*`/`IW4X_*`/`ALTER_*`) or the v1 volume layout (`app/gamefiles/`, `app/plutonium/` at the top level with no `.plutainer-version` marker) and prints a combined refusal block in `docker logs` listing exactly what was detected, plus the two paths forward.
 
-Run the bundled migration tool once per volume:
+**Full step-by-step guide:** [MIGRATION.md](MIGRATION.md) — env var mapping table, the one-command volume migration, dry-run option, and how to pin `:v1-final` if you would rather defer.
 
-```sh
-docker run --rm \
-  -v <YOUR_APP_VOLUME>:/home/plutainer/app \
-  --entrypoint /home/plutainer/.plutainer/migrate-v1-to-v2.sh \
-  ghcr.io/ayymoss/plutainer:v2
-```
+Quick summary of the migration path:
 
-Replace `<YOUR_APP_VOLUME>` with the path bound to `/home/plutainer/app` in your compose file (e.g. `./t6zm-1`). The tool:
-
-1. Creates `runtime/` and `configs/`.
-2. Moves `app/gamefiles/` → `app/runtime/gamefiles/`.
-3. Moves `app/plutonium/` → `app/runtime/plutonium/`.
-4. Lifts every top-level `*.cfg` from the engine config dirs into `app/configs/`, leaving a relative symlink in its place.
-5. Clears stale entries in `app/logs/` (the log-watcher repopulates on next start).
-6. Writes `app/.plutainer-version=2`.
-
-Add `--dry-run` after the entrypoint to preview without modifying anything:
-
-```sh
-docker run --rm \
-  -v <YOUR_APP_VOLUME>:/home/plutainer/app \
-  --entrypoint /home/plutainer/.plutainer/migrate-v1-to-v2.sh \
-  ghcr.io/ayymoss/plutainer:v2 --dry-run
-```
+1. `docker compose down`
+2. Run the migration tool once per volume (append `--dry-run` to preview):
+   ```sh
+   docker run --rm \
+     -v <YOUR_APP_VOLUME>:/home/plutainer/app \
+     --entrypoint /home/plutainer/.plutainer/migrate-v1-to-v2.sh \
+     ghcr.io/ayymoss/plutainer:v2
+   ```
+3. Rename `PLUTO_*`/`IW4X_*`/`ALTER_*` env vars to `PLUTAINER_*` in your compose (full table in MIGRATION.md).
+4. `docker compose up -d`
 
 If you also have IW4MAdmin sidecar mounts pointing at log paths like `./t6zm-1/plutonium/storage/...`, update them to `./t6zm-1/runtime/plutonium/storage/...` — or better, switch to the stable [log symlink directory](#log-symlinks).
 

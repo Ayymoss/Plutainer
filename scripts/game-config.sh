@@ -306,10 +306,41 @@ ensure_config_present() {
   return 1
 }
 
-# Check that the mounted app/ volume is v2-shaped. On a fresh volume,
-# initialise it. On a v1 volume, refuse to start with explicit migration
-# instructions. On a v2 volume, just ensure the expected dirs exist.
+# Scan environment for v1-era legacy env var names. Populates
+# LEGACY_ENVS_FOUND with each name that is set+non-empty. Returns 0 if none
+# found (clean v2 env), 1 if any are present. Caller is responsible for
+# printing the unified refusal block.
+detect_legacy_env_vars() {
+  LEGACY_ENVS_FOUND=()
+  local v
+  local legacy_names=(
+    PLUTO_GAME PLUTO_CONFIG_FILE PLUTO_PORT PLUTO_HEALTHCHECK
+    PLUTO_SKIP_SEED PLUTO_AUTO_UPDATE PLUTO_MOD PLUTO_SERVER_NAME PLUTO_EXTRA_ARGS
+    IW4X_GAME IW4X_CONFIG_FILE IW4X_PORT IW4X_HEALTHCHECK
+    IW4X_AUTO_UPDATE IW4X_MOD IW4X_SERVER_NAME IW4X_EXTRA_ARGS
+    ALTER_GAME ALTER_CONFIG_FILE ALTER_PORT ALTER_HEALTHCHECK
+    ALTER_SKIP_SEED ALTER_AUTO_UPDATE ALTER_MOD ALTER_SERVER_NAME ALTER_EXTRA_ARGS
+  )
+  for v in "${legacy_names[@]}"; do
+    if [[ -n "${!v:-}" ]]; then
+      LEGACY_ENVS_FOUND+=("$v")
+    fi
+  done
+  [[ ${#LEGACY_ENVS_FOUND[@]} -eq 0 ]]
+}
+
+# Check the mounted app/ volume's layout state.
+# Outcomes (silent on v1 detection — the unified refusal block is printed by
+# entrypoint.sh via print_v1_migration_block):
+#   - Marker present + matches PLUTAINER_VOLUME_VERSION: ensure expected dirs
+#     exist, return 0.
+#   - Marker present but version mismatch (e.g. future v3 marker under v2
+#     image): print specific error, return 1.
+#   - Marker absent + v1 layout dirs present: set V1_VOLUME_DETECTED=true,
+#     return 1. No print.
+#   - Marker absent + no v1 dirs: fresh volume — initialise as v2, return 0.
 check_volume_version() {
+  V1_VOLUME_DETECTED=false
   local marker="$PLUTAINER_APP_DIR/.plutainer-version"
 
   if [[ -f "$marker" ]]; then
@@ -326,35 +357,7 @@ check_volume_version() {
 
   # Marker missing. Distinguish v1 volume vs fresh volume.
   if [[ -d "$PLUTAINER_APP_DIR/plutonium" || -d "$PLUTAINER_APP_DIR/gamefiles" ]]; then
-    cat >&2 <<'EOF'
-========================================================================
-[ERROR] v1 volume layout detected. This image (Plutainer v2) uses a new
-layout that places user-editable configs in a single, predictable
-directory.
-
-  v1 layout:                          v2 layout:
-    app/gamefiles/                      app/configs/        (your cfgs)
-    app/plutonium/                      app/runtime/gamefiles/
-    app/logs/                           app/runtime/plutonium/
-                                        app/logs/
-
-To migrate this volume, stop the container and run the bundled migration
-tool against your bind mount:
-
-  docker run --rm \
-    -v <YOUR_APP_VOLUME>:/home/plutainer/app \
-    --entrypoint /home/plutainer/.plutainer/migrate-v1-to-v2.sh \
-    ghcr.io/ayymoss/plutainer:v2
-
-(For a docker-compose deployment, <YOUR_APP_VOLUME> is the path bound to
-/home/plutainer/app — e.g. ./t6zm-1)
-
-The tool moves files in place; configs become symlinks back into the new
-app/configs/ tree. No data is deleted. Re-run with --dry-run to preview.
-
-Refusing to start to avoid corrupting your data.
-========================================================================
-EOF
+    V1_VOLUME_DETECTED=true
     return 1
   fi
 
@@ -362,6 +365,90 @@ EOF
   mkdir -p "$PLUTAINER_CONFIGS_DIR" "$PLUTAINER_APP_DIR/logs" "$PLUTAINER_RUNTIME_DIR"
   echo "$PLUTAINER_VOLUME_VERSION" > "$marker"
   echo "[INFO] Initialised fresh v2 volume at $PLUTAINER_APP_DIR"
+}
+
+# Combined v1-deployment refusal block. Adapts to what was detected.
+# Args: $1=has_legacy_env (true/false), $2=has_v1_volume (true/false).
+# Reads LEGACY_ENVS_FOUND[] populated by detect_legacy_env_vars.
+print_v1_migration_block() {
+  local has_legacy_env="${1:-false}" has_v1_volume="${2:-false}"
+
+  cat >&2 <<'HEADER'
+========================================================================
+[ERROR] Plutainer v2 cannot start against a v1 deployment.
+
+Detected on this container:
+HEADER
+
+  if [[ "$has_legacy_env" == "true" ]]; then
+    echo "  - Legacy env vars set: ${LEGACY_ENVS_FOUND[*]}" >&2
+  fi
+  if [[ "$has_v1_volume" == "true" ]]; then
+    echo "  - v1 volume layout (app/plutonium/ or app/gamefiles/ present, no .plutainer-version marker)" >&2
+  fi
+
+  cat >&2 <<'PATHS'
+
+You have two paths. Pick one.
+
+────────────────────────────────────────────────────────────────────────
+PATH A — Stay on v1 (frozen, no further updates)
+
+  In your compose file, pin:
+    image: ghcr.io/ayymoss/plutainer:v1-final
+
+  Then: docker compose up -d
+  Server starts as before. A deprecation banner will appear on every
+  start until you migrate.
+
+────────────────────────────────────────────────────────────────────────
+PATH B — Migrate to v2 (recommended)
+
+  1. docker compose down
+
+  2. Migrate the volume layout (no data is deleted; --dry-run previews):
+       docker run --rm \
+         -v <YOUR_APP_VOLUME>:/home/plutainer/app \
+         --entrypoint /home/plutainer/.plutainer/migrate-v1-to-v2.sh \
+         ghcr.io/ayymoss/plutainer:v2
+
+     <YOUR_APP_VOLUME> is the host path bound to /home/plutainer/app
+     in your compose (e.g. ./t6zm-1).
+
+  3. Rename env vars in your compose (mapping table — anything not listed
+     here keeps its old name, e.g. PLUTO_SERVER_KEY is unchanged):
+       PLUTO_GAME          → PLUTAINER_GAME
+       PLUTO_CONFIG_FILE   → PLUTAINER_CONFIG_FILE
+       PLUTO_PORT          → PLUTAINER_PORT
+       PLUTO_HEALTHCHECK   → PLUTAINER_HEALTHCHECK
+       PLUTO_MOD           → PLUTAINER_MOD
+       PLUTO_SKIP_SEED     → PLUTAINER_SKIP_SEED
+       PLUTO_AUTO_UPDATE   → PLUTAINER_AUTO_UPDATE
+       PLUTO_SERVER_NAME   → PLUTAINER_SERVER_NAME
+       PLUTO_EXTRA_ARGS    → PLUTAINER_EXTRA_ARGS
+       IW4X_GAME           → PLUTAINER_GAME=iw4x
+       IW4X_CONFIG_FILE    → PLUTAINER_CONFIG_FILE
+       IW4X_PORT           → PLUTAINER_PORT
+       IW4X_HEALTHCHECK    → PLUTAINER_HEALTHCHECK
+       IW4X_MOD            → PLUTAINER_MOD
+       IW4X_AUTO_UPDATE    → PLUTAINER_AUTO_UPDATE
+       IW4X_SERVER_NAME    → PLUTAINER_SERVER_NAME
+       IW4X_EXTRA_ARGS     → PLUTAINER_EXTRA_ARGS
+       ALTER_GAME          → PLUTAINER_GAME (e.g. t7x)
+       ALTER_CONFIG_FILE   → PLUTAINER_CONFIG_FILE
+       ALTER_PORT          → PLUTAINER_PORT
+       ALTER_HEALTHCHECK   → PLUTAINER_HEALTHCHECK
+       ALTER_MOD           → PLUTAINER_MOD
+       ALTER_SKIP_SEED     → PLUTAINER_SKIP_SEED
+       ALTER_AUTO_UPDATE   → PLUTAINER_AUTO_UPDATE
+       ALTER_SERVER_NAME   → PLUTAINER_SERVER_NAME
+       ALTER_EXTRA_ARGS    → PLUTAINER_EXTRA_ARGS
+
+     Full guide: https://github.com/Ayymoss/Plutainer/blob/main/MIGRATION.md
+
+  4. docker compose up -d
+========================================================================
+PATHS
 }
 
 _rcon_missing_warning() {
