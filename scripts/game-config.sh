@@ -219,8 +219,16 @@ link_dir_contents() {
   # entries. Symlinking a subdirectory would inherit the read-only mount and
   # block writes one level down — e.g. iw4x-launcher extracting into
   # zone/patch/ dies with "failed to extract file" when zone/patch is a link.
+  # find walks parents before children, so a replaced dir is always created
+  # before anything nested inside it. `mkdir -p` alone is not enough: it
+  # succeeds silently on an existing symlink-to-a-dir, which would leave a
+  # read-only link from an older image in place.
   local rel
   while IFS= read -r -d '' rel; do
+    if [[ -L "$dest/$rel" ]]; then
+      echo "[INFO] Replacing directory symlink $dest/$rel with a real directory."
+      rm -f "$dest/$rel"
+    fi
     mkdir -p "$dest/$rel"
   done < <(cd "$src" && find . -mindepth 1 -type d -printf '%P\0')
 
