@@ -53,11 +53,30 @@ WORKDIR /build/iw4x-launcher
 
 # bindist-gcc-static.sh prompts for confirmation; -y answers yes. The script
 # emits a flattened .tar.xz under dist-output/ containing only the binary.
-RUN sh bindist-gcc-static.sh -y -j $(nproc) "launcher@https://github.com/iw4x/launcher.git#main"
+#
+# Best-effort by design. Upstream publishes no aarch64 launcher binary, so this
+# is the only way to get one, and it is periodically broken by upstream changes
+# we cannot pin around from here (currently iw4x/launcher#76: their pregenerated
+# ODB sources are stale relative to their own libodb constraint). Failing the
+# whole arm64 image over it would take Plutonium T4/T5/T6/IW5 and Alterware T7x
+# down with it, none of which need this binary. So record the failure and let
+# iw4xentry.sh refuse only iw4x, at runtime, with an explanation.
+RUN sh bindist-gcc-static.sh -y -j $(nproc) "launcher@https://github.com/iw4x/launcher.git#main" \
+ || { echo "WARNING: iw4x-launcher failed to build — this image will NOT support PLUTAINER_GAME=iw4x"; \
+      touch /build/iw4x-launcher-build-failed; }
 
+# /out must never be empty: stage 3 copies the directory (not the file) so that
+# a missing binary does not break the COPY, and BuildKit is happier copying a
+# directory that has something in it.
 RUN mkdir -p /out \
- && tar -xJf dist-output/*.tar.xz -C /out \
- && find /out -type f -name 'launcher' -exec mv {} /out/iw4x-launcher \;
+ && if [ -f /build/iw4x-launcher-build-failed ]; then \
+      echo "iw4x-launcher could not be built for this architecture. See iw4x/launcher#76." \
+        > /out/iw4x-launcher.unavailable; \
+    else \
+      tar -xJf dist-output/*.tar.xz -C /out \
+      && find /out -type f -name 'launcher' -exec mv {} /out/iw4x-launcher \; ; \
+    fi \
+ && ls -la /out
 
 # ---------------------------------------------------------------------------
 # Stage 3: runtime image.
@@ -112,31 +131,59 @@ COPY --from=rust-builder --chown=plutainer:plutainer \
      /build/plutonium-updater.rs/target/release/plutonium-updater \
      /home/plutainer/.plutainer/plutonium-updater
 
+# Directory copy, not a file copy: when the launcher build failed there is no
+# iw4x-launcher to copy and a file COPY would abort the image build, which is
+# exactly the coupling we are removing. /out then holds the .unavailable
+# marker instead and iw4xentry.sh reports it at startup.
 COPY --from=cpp-builder --chown=plutainer:plutainer \
-     /out/iw4x-launcher \
-     /home/plutainer/.plutainer/iw4x-launcher
+     /out/ \
+     /home/plutainer/.plutainer/
 
 # Bundle community config seeds for first-run scaffolding. Entrypoint copies
 # these into the bind mount on start with cp -n (never overwrites user files).
 # Source repos: xerxes-at/T{4,5,6}ServerConfig*, xerxes-at/IW5ServerConfig,
-# Dss0/t7-server-config. Disable per-stack via PLUTO_SKIP_SEED/ALTER_SKIP_SEED.
+# Dss0/t7-server-config, iw4x/iw4-server-configs.
+# Disable per-stack via PLUTAINER_SKIP_SEED.
+# Keep in sync with the equivalent block in Dockerfile.
 RUN set -eux; \
-    mkdir -p seed-configs/{t4,t5,t6,iw5,t7x}; \
+    mkdir -p seed-configs/{t4,t5,t6,iw5,t7x,iw4x}; \
     cd /tmp; \
     wget -q -O t4.zip   https://github.com/xerxes-at/T4ServerConfigs/archive/refs/heads/main.zip   && unzip -q t4.zip; \
     wget -q -O t5.zip   https://github.com/xerxes-at/T5ServerConfig/archive/refs/heads/master.zip && unzip -q t5.zip; \
     wget -q -O t6.zip   https://github.com/xerxes-at/T6ServerConfigs/archive/refs/heads/master.zip && unzip -q t6.zip; \
     wget -q -O iw5.zip  https://github.com/xerxes-at/IW5ServerConfig/archive/refs/heads/master.zip && unzip -q iw5.zip; \
     wget -q -O t7x.zip  https://github.com/Dss0/t7-server-config/archive/refs/heads/main.zip && unzip -q t7x.zip; \
+    wget -q -O iw4x.zip https://github.com/iw4x/iw4-server-configs/archive/refs/heads/main.zip && unzip -q iw4x.zip; \
     cp -r T4ServerConfigs-main/main/.                              /home/plutainer/.plutainer/seed-configs/t4/; \
     cp -r T5ServerConfig-master/localappdata/Plutonium/storage/t5/. /home/plutainer/.plutainer/seed-configs/t5/; \
     cp -r T6ServerConfigs-master/localappdata/Plutonium/storage/t6/. /home/plutainer/.plutainer/seed-configs/t6/; \
     cp -r IW5ServerConfig-master/admin/.                            /home/plutainer/.plutainer/seed-configs/iw5/; \
     cp -r t7-server-config-main/zone /home/plutainer/.plutainer/seed-configs/t7x/; \
     cp -r t7-server-config-main/t7x  /home/plutainer/.plutainer/seed-configs/t7x/; \
-    rm -rf /tmp/*.zip /tmp/T4ServerConfigs-main /tmp/T5ServerConfig-master /tmp/T6ServerConfigs-master /tmp/IW5ServerConfig-master /tmp/t7-server-config-main; \
+    cp -r iw4-server-configs-main/userraw /home/plutainer/.plutainer/seed-configs/iw4x/; \
+    rm -rf /tmp/*.zip /tmp/T4ServerConfigs-main /tmp/T5ServerConfig-master /tmp/T6ServerConfigs-master /tmp/IW5ServerConfig-master /tmp/t7-server-config-main /tmp/iw4-server-configs-main; \
     find /home/plutainer/.plutainer/seed-configs -type d -iname '*REFERENCE*' -exec rm -rf {} +; \
     find /home/plutainer/.plutainer/seed-configs -type f \( -iname '*.bat' -o -iname '*.sh' -o -iname 'README*' \) -delete
+
+# Mirrors Dockerfile: iw4x's upstream config ships sv_maprotation commented out,
+# unlike every other seed, so a first run would have nothing to load.
+RUN set -eux; \
+    for f in server.cfg serverlan.cfg; do \
+      p="/home/plutainer/.plutainer/seed-configs/iw4x/userraw/$f"; \
+      if [ ! -f "$p" ]; then continue; fi; \
+      if grep -qE '^[[:space:]]*set[[:space:]]+sv_maprotation' "$p"; then continue; fi; \
+      { \
+        echo ''; \
+        echo '// ---------------------------------------------------------------'; \
+        echo '// Added by Plutainer: upstream ships sv_maprotation commented out,'; \
+        echo '// which leaves +map_rotate with nothing to load on a first run.'; \
+        echo '// Stock MW2 maps only, so this works without the DLC fastfiles.'; \
+        echo '// Edit freely, or set PLUTAINER_MAP_ROTATE=false to drive map'; \
+        echo '// selection from a playlist instead.'; \
+        echo '// ---------------------------------------------------------------'; \
+        echo 'set sv_maprotation "map mp_afghan map mp_rust map mp_terminal map mp_highrise map mp_favela map mp_quarry map mp_boneyard map mp_checkpoint map mp_subbase map mp_underpass map mp_derail map mp_estate map mp_invasion map mp_rundown map mp_brecourt map mp_nightshift"'; \
+      } >> "$p"; \
+    done
 
 COPY --chown=plutainer:plutainer scripts/ .
 RUN chmod +x entrypoint.sh healthcheck.sh plutoentry.sh iw4xentry.sh alterentry.sh \

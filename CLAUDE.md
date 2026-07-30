@@ -58,7 +58,13 @@ Not pinnable from our side: `bpkg` fetches the manifests from the *remote* repo,
 
 Tracked upstream: **iw4x/launcher#76** (<https://github.com/iw4x/launcher/issues/76>). When that closes, re-run the workflow and arm64 should build again with no change needed on our side.
 
-Worth knowing: `cpp-builder` exists *only* to compile iw4x-launcher, and it is the sole failing stage — `plutonium-updater` (all Plutonium games), Wine, and the T7x path all build fine on arm64. So one broken component currently blocks the whole arm64 image. If upstream stalls, the option is to make the launcher build non-fatal and have `iw4xentry.sh` refuse iw4x with a clear message when the binary is absent (capability check, not an arch check, so it self-heals). That would restore multi-arch `:latest` for the other six games.
+`cpp-builder` exists *only* to compile iw4x-launcher, and it is the sole failing stage — `plutonium-updater` (all Plutonium games), Wine, and the T7x path all build fine on arm64.
+
+**Graceful degradation (implemented).** Rather than let one component block the whole arm64 image, `Dockerfile.arm64` allows the launcher build to fail: it `touch`es a marker, and the next step writes `/out/iw4x-launcher.unavailable` instead of the binary. Stage 3 then copies `/out/` as a **directory**, not a file — a file `COPY` of a missing path would abort the build, which is precisely the coupling being removed, and the marker guarantees the directory is never empty. `iw4xentry.sh` tests `-x` on the launcher and, if absent, `hold_indefinitely`s with an explanation naming the upstream issue.
+
+That check is **capability-based, not arch-based**, so it clears itself the moment an image ships a working binary — no code change needed when upstream fixes #76. Net effect: arm64 publishes and supports six of seven games; only `PLUTAINER_GAME=iw4x` on arm64 refuses, and it says why.
+
+Both Dockerfiles carry their own copy of the seed-configs block. **Keep them in sync** — the iw4x seed was initially added to `Dockerfile` only, which would have shipped an arm64 image with no iw4x seed.
 
 ## Architecture
 

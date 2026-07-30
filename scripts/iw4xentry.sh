@@ -58,6 +58,19 @@ link_dir_contents "$SOURCE_DIR" "$DEST_DIR" zone/dlc
 # /home/plutainer/.plutainer and reinstate the ephemeral install root.
 IW4X_LAUNCHER_SRC="/home/plutainer/.plutainer/iw4x-launcher"
 IW4X_LAUNCHER="$DEST_DIR/iw4x-launcher"
+
+# Capability check, deliberately not an architecture check, so this clears
+# itself the moment an image ships a working binary again. The arm64 image
+# builds the launcher from source because upstream publishes x86_64 binaries
+# only, and that build is allowed to fail rather than taking the other six
+# games down with it (see Dockerfile.arm64).
+if [[ ! -x "$IW4X_LAUNCHER_SRC" ]]; then
+  hold_indefinitely "iw4x-launcher is missing from this image, so PLUTAINER_GAME=iw4x cannot start.
+  This image was built for an architecture upstream does not publish a launcher
+  binary for, and building it from source failed. Tracked as iw4x/launcher#76.
+  Options: run iw4x on an amd64 host, or use a different PLUTAINER_GAME —
+  Plutonium (t4/t5/t6/iw5) and Alterware (t7x) are unaffected."
+fi
 if [[ ! -f "$IW4X_LAUNCHER" || "$IW4X_LAUNCHER_SRC" -nt "$IW4X_LAUNCHER" ]]; then
   echo "Staging iw4x-launcher into the game directory..."
   cp -f "$IW4X_LAUNCHER_SRC" "$IW4X_LAUNCHER"

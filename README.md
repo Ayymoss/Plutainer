@@ -11,7 +11,11 @@ The container is available on GitHub Container Registry: `ghcr.io/ayymoss/plutai
 >
 > **Upgrading from v1?** See [MIGRATION.md](MIGRATION.md) — covers the env var rename, the volume migration command (one `docker run`), and how to pin `:v1-final` if you want to defer the migration.
 
-> **Architecture support:** `linux/amd64` is the primary target. `linux/arm64` is built best-effort — upstream `iw4x/launcher` publishes `x86_64` binaries only, so the arm64 image compiles it from source and is occasionally broken by upstream changes. When that happens `:latest`/`:v2` are published **amd64-only** rather than being held back, and the build log carries a warning. If you run arm64, check `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` before upgrading.
+> **Architecture support:** `linux/amd64` is the primary target; `linux/arm64` is also published.
+>
+> One caveat, and it only affects IW4x. Upstream `iw4x/launcher` publishes `x86_64` binaries only, so the arm64 image has to compile it from source, and that build is periodically broken by upstream changes (currently [iw4x/launcher#76](https://github.com/iw4x/launcher/issues/76)). When it fails, the arm64 image is still published and every other game works normally — but `PLUTAINER_GAME=iw4x` on arm64 will refuse to start, telling you why, instead of failing obscurely. Plutonium (`t4`/`t5`/`t6`/`iw5`) and Alterware (`t7x`) are unaffected on both architectures.
+>
+> The check is capability-based, not architecture-based, so IW4x on arm64 starts working again automatically as soon as an image ships with a working launcher binary. If the arm64 build fails outright for some other reason, `:latest`/`:v2` are published **amd64-only** rather than being held back, with a warning in the build summary — run `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` to check before upgrading an arm64 host.
 
 ## Overview
 
