@@ -26,16 +26,25 @@ link_files "$SOURCE_DIR" "$DEST_DIR" main usermaps binkw32.dll localization.txt 
 # link_configs to fan cfg symlinks into.
 link_dir_contents "$SOURCE_DIR" "$DEST_DIR" userraw
 
-# zone/ is split by ownership. The launcher's rawfiles manifest writes every
-# file under zone/patch/ and zone/zonebuilder/, so those must be left entirely
-# to it: a symlink there — at the directory OR the leaf — points into the
-# read-only mount and kills the extract with
+# zone/ is split by how the launcher writes, not by who owns the content.
+#
+# Its rawfiles component unpacks release.zip by writing straight through each
+# destination path, so a symlink there — at the directory OR the leaf — resolves
+# into the read-only mount and aborts the whole run:
 #   [E] failed to extract file: zone/patch/iw4_credits_load.ff
-# Its 56 zone/patch entries are a strict superset of a full MW2 install's 39,
-# and zone/zonebuilder is the single zonebuilder_minigun.ff it also ships, so
-# nothing is lost by not mirroring them. english/ and dlc/ hold the host's map
-# fastfiles, which the launcher never touches (its DLC component writes to
-# iw3/zone/dlc/ instead), so those are mirrored.
+# That kills sync_dlc and sync_helper too and leaves rawfiles unstamped, so
+# every later start fails identically and client updates never apply. The zip
+# covers all of zone/patch/ and zone/zonebuilder/, so we must not pre-populate
+# either. Nothing is lost: its 56 zone/patch entries are a strict superset of a
+# full MW2 install's 39, and zone/zonebuilder is the same lone
+# zonebuilder_minigun.ff it ships.
+#
+# Every other component downloads to a staging dir and renames into place,
+# which *replaces* a symlink rather than writing through it. So mirroring
+# zone/dlc is safe even though the launcher does write there (its cdn manifest
+# says iw3/zone/dlc/... but it strips the prefix). It is also worth doing: the
+# reconciler validates the host's existing fastfiles by hash and skips
+# re-downloading the ones that already match.
 link_dir_contents "$SOURCE_DIR" "$DEST_DIR" zone/english
 link_dir_contents "$SOURCE_DIR" "$DEST_DIR" zone/dlc
 
