@@ -11,11 +11,11 @@ The container is available on GitHub Container Registry: `ghcr.io/ayymoss/plutai
 >
 > **Upgrading from v1?** See [MIGRATION.md](MIGRATION.md) — covers the env var rename, the volume migration command (one `docker run`), and how to pin `:v1-final` if you want to defer the migration.
 
-> **Architecture support:** `linux/amd64` is the primary target; `linux/arm64` is also published.
+> **Architecture support:** `linux/amd64` and `linux/arm64` are both published.
 >
-> One caveat, and it only affects IW4x. Upstream `iw4x/launcher` publishes `x86_64` binaries only, so the arm64 image has to compile it from source, and that build is periodically broken by upstream changes (currently [iw4x/launcher#76](https://github.com/iw4x/launcher/issues/76)). When it fails, the arm64 image is still published and every other game works normally — but `PLUTAINER_GAME=iw4x` on arm64 will refuse to start, telling you why, instead of failing obscurely. Plutonium (`t4`/`t5`/`t6`/`iw5`) and Alterware (`t7x`) are unaffected on both architectures.
+> **IW4x is not currently supported on arm64.** Upstream `iw4x/launcher` publishes `x86_64` binaries only, so the arm64 image compiles it from source, and that build is presently broken ([iw4x/launcher#76](https://github.com/iw4x/launcher/issues/76)). `PLUTAINER_GAME=iw4x` on arm64 refuses to start and says why. Plutonium (`t4`/`t5`/`t6`/`iw5`) and Alterware (`t7x`) work normally on both architectures, and IW4x on arm64 resumes automatically once a build produces a working launcher.
 >
-> The check is capability-based, not architecture-based, so IW4x on arm64 starts working again automatically as soon as an image ships with a working launcher binary. If the arm64 build fails outright for some other reason, `:latest`/`:v2` are published **amd64-only** rather than being held back, with a warning in the build summary — run `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` to check before upgrading an arm64 host.
+> If the arm64 build fails outright, `:latest`/`:v2` are published amd64-only rather than held back. Check with `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` before upgrading an arm64 host.
 
 ## Overview
 
@@ -38,9 +38,11 @@ Before you can use this Docker image, you will need to have the base game files 
 
 You will also need to have Docker and Docker Compose installed on your system.
 
-The gamefiles mount is read-only and should contain only the base game's own files. Anything the updaters can fetch is written into the `app/` volume instead, so don't stage it in the mount.
+The gamefiles mount is read-only and should hold only the base game's own files. Anything an updater can fetch goes into the `app/` volume instead, so don't stage it in the mount.
 
-For **IW4x** specifically, the mount needs just the stock MW2 install — `main/`, `zone/english/`, `zone/dlc/`, `binkw32.dll`, `localization.txt`, `mss32.dll`. The `iw4x-launcher` fetches everything else into `app/runtime/gamefiles/` on first start (roughly 1–2 GB, kept across container recreation): `iw4x.exe`, `iw4x.dll`, `zonebuilder.exe`, the `iw4x/` asset directory including its `.iwd` archives, all of `zone/patch/` and `zone/zonebuilder/`, and the extra DLC fastfiles. `zone/patch/` and `zone/zonebuilder/` are owned entirely by the launcher — copies of those in your gamefiles mount are ignored, so a slimmed-down server install is fine. Client-only assets (`main/video/`, `logo.bmp`, `splash.bmp`) are never used and can be removed; [`mxve/shrink-iw4x`](https://github.com/mxve/shrink-iw4x) does this properly and ships a Linux binary.
+For **IW4x**, the mount needs only the stock MW2 install: `main/`, `zone/english/`, `zone/dlc/`, `binkw32.dll`, `localization.txt`, `mss32.dll`. On first start `iw4x-launcher` fetches the rest into `app/runtime/gamefiles/` (~1–2 GB, kept across container recreation): `iw4x.exe`, `iw4x.dll`, `zonebuilder.exe`, the `iw4x/` asset directory and its `.iwd` archives, all of `zone/patch/` and `zone/zonebuilder/`, and the DLC fastfiles.
+
+`zone/patch/` and `zone/zonebuilder/` are owned entirely by the launcher — copies in your gamefiles mount are ignored, so a slimmed-down server install is fine. Client-only assets (`main/video/`, `logo.bmp`, `splash.bmp`) are unused; [`mxve/shrink-iw4x`](https://github.com/mxve/shrink-iw4x) strips those and the media inside `main/*.iwd`, taking a full install from ~15 GB to ~6 GB.
 
 ## Getting Started: `docker-compose.yml`
 
@@ -124,6 +126,8 @@ If you set `PLUTAINER_MOD`, the same cfg also gets symlinked into the mod's conf
 
 Nested configs (e.g. cfg files referenced by mods using subdirectories) stay at their engine path under `app/runtime/` and are not lifted to `configs/`. You can still edit them there.
 
+**Updater-owned paths:** for IW4x, everything under `app/runtime/gamefiles/zone/patch/` and `zone/zonebuilder/` belongs to `iw4x-launcher`. Files you add there whose names collide with its own are overwritten on update, and a *symlink* placed there stops the launcher extracting at all, which silently disables updates. Put custom content elsewhere — `userraw/` is the usual place for scripts and assets, and is never touched by the updater.
+
 **Auto-lift:** if you set `PLUTAINER_CONFIG_FILE=dedicated.cfg` but the file is at `app/runtime/.../dedicated.cfg` (as a real file, not symlink) rather than `app/configs/dedicated.cfg`, the container moves it into `app/configs/` on next start and the symlink fan-out picks it up. One-time fix, no manual migration.
 
 **Filename mismatch:** if the configured file doesn't exist anywhere, the container refuses to start with a clear error and (if there's a case-only mismatch like `Server.cfg` vs `server.cfg`) tells you which case-insensitive match it found. Filenames remain case-sensitive — the container won't auto-rename.
@@ -183,11 +187,11 @@ Top-level `*.cfg` files from each seed bundle land in `app/configs/` (flat). Oth
 | Alterware T7x | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) (includes `t7x/lobby_scripts/` required for `sv_lobby_mode`) |
 | IW4x | [iw4x/iw4-server-configs](https://github.com/iw4x/iw4-server-configs) (`userraw/` — `server.cfg`, `serverlan.cfg`, `partyserver.cfg`, `partyserverlan.cfg`, plus the playlist `*.info` files) |
 
-For IW4x that gives you four configs in `app/configs/` — set `PLUTAINER_CONFIG_FILE` to whichever you want (`server.cfg` is the normal dedicated one; the `partyserver*` pair run lobby mode off playlists instead). The playlist `*.info` files land under `app/runtime/gamefiles/userraw/`.
+IW4x seeds four configs into `app/configs/` — set `PLUTAINER_CONFIG_FILE` to whichever you want (`server.cfg` is the normal dedicated one; the `partyserver*` pair run lobby mode from playlists). The playlist `*.info` files land under `app/runtime/gamefiles/userraw/`.
 
-> **One deviation from upstream:** `iw4x/iw4-server-configs` ships `sv_maprotation` commented out, which would leave `+map_rotate` with nothing to load on a first run. Plutainer appends a stock-MW2 rotation to `server.cfg` and `serverlan.cfg` at image build time, marked with an `// Added by Plutainer` comment block. Stock maps only, so it works without the DLC fastfiles. Edit it freely, or set `PLUTAINER_MAP_ROTATE=false` to drive map selection from a playlist.
+> `iw4x/iw4-server-configs` ships `sv_maprotation` commented out, unlike the other seeds, which would leave `+map_rotate` with nothing to load. Plutainer appends a stock-MW2 rotation to `server.cfg` and `serverlan.cfg` at image build time under an `// Added by Plutainer` comment block. Stock maps only, so no DLC fastfiles required. Edit freely, or set `PLUTAINER_MAP_ROTATE=false` to select maps from a playlist instead.
 
-**Set `rcon_password` before you rely on the healthcheck.** Every one of these upstream repos ships it empty, and the healthcheck works by sending an RCON `status` — so until you set one, a seeded server starts and plays fine but reports `unhealthy`. `rcon-cli` needs it too.
+**Set `rcon_password` before relying on the healthcheck.** All of these upstream repos ship it empty, and the healthcheck sends an RCON `status` — until you set one, a seeded server plays fine but reports `unhealthy`. `rcon-cli` needs it too.
 
 To opt out — for example if you manage configs entirely yourself and don't want any default files appearing in your bind mount — set `PLUTAINER_SKIP_SEED=true`.
 

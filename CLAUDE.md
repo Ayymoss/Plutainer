@@ -29,44 +29,27 @@ There are no automated tests or linters. The CI pipeline (`.github/workflows/doc
 
 ## Tags
 
-The `v2-layout` branch is gone — v2 was merged into `main`, so **`main` is v2** and publishes both tags. Anything describing `:latest` as "the deprecated v1 layout" is stale.
+`main` is v2 and publishes every tag; the `v2-layout` branch no longer exists.
 
-- `ghcr.io/ayymoss/plutainer:latest` and `:v2` — both built from `main`, both multi-arch, identical content. `:v2` is kept so existing v2 users' compose files keep working.
-- `ghcr.io/ayymoss/plutainer:edge` — **amd64 only**, published directly from the amd64 build job so it lands in ~3 min without waiting on arm64. For iterative testing. Pulling it on arm64 fails with a platform mismatch.
-- `:sha-<short>` on every build; `:<tag>` on releases; `:pr-<n>` on PRs.
+- `:latest` and `:v2` — built from `main`, multi-arch, identical content. `:v2` exists so existing compose files keep working.
+- `:edge` — **amd64 only**, pushed from the amd64 build job without waiting on arm64. For iterative testing; pulling it on arm64 fails with a platform mismatch.
+- `:sha-<short>` on every build, `:<tag>` on releases, `:pr-<n>` on PRs.
 
-Tag logic (`metadata-action` in the `merge` job):
-- `type=raw,value=latest,enable={{is_default_branch}}`
-- `type=raw,value=v2,enable={{is_default_branch}}`
-- `type=ref,event=tag`, `type=ref,event=pr`, `type=sha`
+Tag logic lives in `metadata-action` in the `merge` job.
 
 ## Architecture support
 
-amd64 is required; **arm64 is best-effort** (`optional: true` + `continue-on-error` in the build matrix). If arm64 fails, amd64 still publishes and `merge` emits a `::warning::` plus a job-summary note; only a missing *amd64* digest blocks a publish.
+amd64 is required. **arm64 is best-effort** (`optional: true` + `continue-on-error` in the build matrix): if it fails, amd64 still publishes and `merge` emits a `::warning::` and job-summary note. Only a missing *amd64* digest blocks a publish.
 
-The asymmetry is upstream's: `iw4x/launcher` ships release binaries for `x86_64-linux` and `x86_64-windows` only, so `Dockerfile` grabs the prebuilt binary while `Dockerfile.arm64` compiles it (and the whole build2 toolchain) from source.
+`iw4x/launcher` publishes `x86_64` binaries only, so `Dockerfile` downloads the prebuilt binary while `Dockerfile.arm64` compiles it, and the build2 toolchain, from source. `cpp-builder` exists solely for that; everything else arm64 needs (Wine, `plutonium-updater`, the T7x path) builds fine.
 
-**Cache keying (important).** Both Dockerfiles fetch the launcher from upstream *inside* a `RUN`, so their layer cache key never changes on its own and upstream fixes stay invisible until the cache is evicted. CI resolves the upstream ref and passes it as `IW4X_LAUNCHER_REF` (release tag for amd64, commit SHA for arm64) purely to key the cache. This is load-bearing on arm64: the `|| { … }` fallback makes that `RUN` exit 0 even when the compile fails, so a **failed** build is cached as a success and would keep shipping `.unavailable` indefinitely. Don't remove the ARG.
+**Current state: iw4x does not work on arm64.** The source build fails and the image ships `/home/plutainer/.plutainer/iw4x-launcher.unavailable` instead of the binary. Plutonium (t4/t5/t6/iw5) and Alterware (t7x) are unaffected on both architectures. Background: iw4x/launcher#76.
 
-**Previously-known arm64 breakage (resolved upstream 2026-07-30).** iw4x/launcher#76 was fixed: the pregenerated sources were regenerated to `ODB_VERSION != 20600UL` and the dependency pinned to `libodb == 2.6.0` / `libodb-sqlite == 2.6.0`. The degradation path below stays as the safety net for the next time upstream drifts. For the record, the failure was:
+**Degradation.** `Dockerfile.arm64` lets the launcher build fail, writing the `.unavailable` marker in its place. Stage 3 copies `/out/` as a **directory**, not a file — a file `COPY` of a missing path aborts the build, which is the coupling being avoided; the marker also keeps the directory non-empty. `iw4xentry.sh` tests `-x` on the binary and `hold_indefinitely`s if absent. That is a capability check, not an arch check, so iw4x starts working again as soon as an image ships a binary, with no code change.
 
-```
-launcher/pregenerated/launcher/cache/cache-types-odb.hxx:13:2: error: #error ODB runtime version mismatch
-```
+**`IW4X_LAUNCHER_REF` is load-bearing — do not remove it.** Both Dockerfiles fetch the launcher inside a `RUN`, so the layer cache key never changes on its own and upstream changes stay invisible until eviction. CI resolves the upstream ref (release tag for amd64, commit SHA for arm64) and passes it purely to key the cache. This matters most on arm64, where the `|| { … }` fallback makes the step exit 0 on failure, so a failed build caches as a success and would keep shipping the marker indefinitely.
 
-The launcher's checked-in *pregenerated* ODB sources guard on `ODB_VERSION != 20551UL` (odb 2.6.0-b.51), but its `manifest` declares `depends: libodb >= 2.6.0-` and its `repositories.manifest` takes odb from `codesynthesis-com/odb.git#master`. odb 2.6.0 final has since been published, so build2 correctly resolves 2.6.0 (`20600`) and the stale generated sources reject it.
-
-Not pinnable from our side: `bpkg` fetches the manifests from the *remote* repo, so patching a local clone has no effect, and the constraint lives in upstream's own manifest. It needs upstream to regenerate their ODB sources (or pin odb). Do not "fix" this by rewriting the version guard — the generated code may not be ABI-compatible with 2.6.0.
-
-Tracked upstream: **iw4x/launcher#76** (<https://github.com/iw4x/launcher/issues/76>). When that closes, re-run the workflow and arm64 should build again with no change needed on our side.
-
-`cpp-builder` exists *only* to compile iw4x-launcher, and it is the sole failing stage — `plutonium-updater` (all Plutonium games), Wine, and the T7x path all build fine on arm64.
-
-**Graceful degradation (implemented).** Rather than let one component block the whole arm64 image, `Dockerfile.arm64` allows the launcher build to fail: it `touch`es a marker, and the next step writes `/out/iw4x-launcher.unavailable` instead of the binary. Stage 3 then copies `/out/` as a **directory**, not a file — a file `COPY` of a missing path would abort the build, which is precisely the coupling being removed, and the marker guarantees the directory is never empty. `iw4xentry.sh` tests `-x` on the launcher and, if absent, `hold_indefinitely`s with an explanation naming the upstream issue.
-
-That check is **capability-based, not arch-based**, so it clears itself the moment an image ships a working binary — no code change needed when upstream fixes #76. Net effect: arm64 publishes and supports six of seven games; only `PLUTAINER_GAME=iw4x` on arm64 refuses, and it says why.
-
-Both Dockerfiles carry their own copy of the seed-configs block. **Keep them in sync** — the iw4x seed was initially added to `Dockerfile` only, which would have shipped an arm64 image with no iw4x seed.
+**Both Dockerfiles carry their own seed-configs block — keep them in sync.**
 
 ## Architecture
 
@@ -78,11 +61,21 @@ Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All e
 
 3. **`iw4xentry.sh`** — IW4x server entrypoint. Same shape: symlinks game files, runs `iw4x-launcher`, seeds bundled configs, fans out config symlinks (engine + optional mod dir), validates, `launch_game wine iw4x.exe`. Seed bundle is `iw4x/iw4-server-configs` with `cfg_root_rel="userraw"`, so its top-level `userraw/*.cfg` lift into `configs/` and the playlist `*.info` files stay under `runtime/gamefiles/userraw/`. The Dockerfile appends a stock-MW2 `sv_maprotation` to the seed's `server.cfg`/`serverlan.cfg` — upstream ships it commented out, unlike every other seed here, which would leave `+map_rotate` with nothing to load on a first run.
 
-   The launcher has **no `--path` flag** — it canonicalises `/proc/self/exe` and treats its own directory as the installation root, ignoring cwd. So the entrypoint `cp`s the binary from `.plutainer/` into `runtime/gamefiles/` and runs it there, which puts the install root inside the volume. It must be a real copy, not a symlink: `canonical()` would resolve a symlink back to `.plutainer/` (an image layer), and the ~800MB it fetches would be re-downloaded on every container recreate. Launcher outputs, all relative to that root: `iw4x.exe`, `iw4x.dll`, `zonebuilder.exe`, `steam.exe`, `steam_api64.dll`, `iw4x/` (incl. `iw4x_0{0..5}.iwd`), `zone/patch/*.ff`, `zone/zonebuilder/*.ff`, `iw3/zone/dlc/*.ff`, and `cache/iw4x.db` (the update-check marker). Its `clean()` only prunes files tracked in its own DB, so our config and game-file symlinks are untouched.
+   **The launcher has no `--path` flag.** It canonicalises `/proc/self/exe` and uses its own directory as the installation root, ignoring cwd. The entrypoint therefore `cp`s the binary into `runtime/gamefiles/` and runs it from there, putting the install root inside the volume. It must be a real copy — `canonical()` resolves a symlink back to `.plutainer/`, an image layer, and the ~800MB it fetches would be re-downloaded on every container recreate.
 
-   **`zone/` is split by how the launcher writes, not by who owns the content.** The rawfiles component unpacks `release.zip` by writing *straight through* each destination path, so a symlink at the directory or the leaf resolves into the read-only mount and aborts the run with `[E] failed to extract file: zone/patch/iw4_credits_load.ff` — which also skips `sync_dlc`/`sync_helper` and leaves rawfiles unstamped, so every later start fails identically and client updates never apply. The zip covers all of `zone/patch/` and `zone/zonebuilder/`, so neither may be pre-populated. Nothing is lost: its 56 `zone/patch` entries are a strict superset of a full MW2 install's 39, and `zone/zonebuilder` is the same lone `zonebuilder_minigun.ff`.
+   Launcher outputs, relative to that root: `iw4x.exe`, `iw4x.dll`, `zonebuilder.exe`, `steam.exe`, `steam_api64.dll`, `iw4x/` (incl. `iw4x_0{0..5}.iwd`), `zone/patch/*.ff`, `zone/zonebuilder/*.ff`, `iw3/zone/dlc/*.ff` (written to `zone/dlc/` — the manifest prefix is stripped), and `cache/iw4x.db`, the update-check marker. Its `clean()` only prunes files tracked in its own DB, so our symlinks are untouched.
 
-   Every *other* component stages downloads and renames into place, which replaces a symlink instead of writing through it. So `zone/english` and `zone/dlc` are mirrored — safe even though the DLC component does write into `zone/dlc` (its cdn manifest declares `iw3/zone/dlc/...` but the prefix is stripped), and worthwhile because the reconciler hash-validates the host's existing fastfiles and skips re-downloading matches. A launcher failure is only fatal on first run (no `iw4x.exe` yet); otherwise it warns and starts the existing install.
+   **Never pre-populate `zone/patch/` or `zone/zonebuilder/`.** The rawfiles component unpacks `release.zip` by writing straight through each destination path, so a symlink at the directory *or* the leaf resolves into the read-only mount and aborts the whole run:
+
+   ```
+   [E] failed to extract file: zone/patch/iw4_credits_load.ff
+   ```
+
+   That also skips `sync_dlc`/`sync_helper` and leaves rawfiles unstamped, so every later start fails identically and client updates never apply. Nothing is lost by ceding both: the launcher's 56 `zone/patch` entries are a superset of a full MW2 install's 39, and `zone/zonebuilder` is the same lone `zonebuilder_minigun.ff`.
+
+   `zone/english` and `zone/dlc` *are* mirrored. Every component other than rawfiles stages downloads and renames into place, which replaces a symlink rather than writing through it, so mirroring is safe there — and useful, since the reconciler hash-validates existing host fastfiles and skips re-downloading matches.
+
+   A launcher failure is fatal only on first run (no `iw4x.exe` yet); otherwise it warns and starts the existing install.
 
 4. **`alterentry.sh`** — Alterware (T7x/BO3) entrypoint. Symlinks game files, uses `wget -N` (timestamping) to fetch `t7x.exe` only when upstream is newer, seeds Dss0/t7-server-config bundle, fans out config symlinks, starts `Xvfb` (T7x requires a display), `launch_game wine t7x.exe`. No mod dir (alterware MOD is a Steam Workshop ID).
 
@@ -96,7 +89,7 @@ Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All e
    - `resolve_config_layout`: sets `CONFIG_SOT_DIR` and `ALT_CONFIG_DIR` based on `PLUTAINER_USE_RAW_CONFIGS`. Default: SOT = `configs/`, ALT = engine dir. With raw mode on: swapped.
    - `resolve_config_path`: convenience wrapper that resolves the engine dir + layout in one call so healthcheck/rcon-cli only need this.
    - `link_files <src> <dest> <name1>...`: existence-guarded symlink helper; replaces unsafe `ln -sf src/{a,b,c} dest/` bash brace expansion.
-   - `link_dir_contents <src_root> <dest_root> <name>`: mirrors `src_root/name` into `dest_root/name`, recreating **every** directory level as a real dir and symlinking only leaf files. `name` may be nested (`zone/english`) to mirror one subtree while leaving its siblings alone; symlinks are replaced at every component of the path, since an older image may have linked a parent. Use instead of `link_files` for any dir that must be writable while also carrying read-only host game files — the engine config dir (`link_configs` fans cfg symlinks into it) or a dir an updater writes into. Symlinking a dir at *any* depth inherits the read-only mount: linking just the top level still left `zone/patch/` read-only and killed the iw4x-launcher with `failed to extract file: zone/patch/iw4_credits_load.ff`. Never overwrites a real file already at the destination, so an updater-written copy wins over the host's. Replaces a directory symlink left by an older image.
+   - `link_dir_contents <src_root> <dest_root> <name>`: mirrors `src_root/name` into `dest_root/name`, recreating **every** directory level as a real dir and symlinking only leaf files. Use instead of `link_files` for any dir that must stay writable while also carrying read-only host game files — the engine config dir, or one an updater writes into. A symlinked dir at *any* depth inherits the read-only mount, so mirroring only the top level is not enough. `name` may be nested (`zone/english`) to mirror one subtree and leave its siblings alone; symlinks are replaced at every component of the path, since an older image may have linked a parent. Never overwrites a real file at the destination, so an updater-written copy wins over the host's.
    - `seed_configs <game-key> <asset-root> <cfg-root-rel>`: walks bundled seed, lifts top-level `*.cfg` files inside `cfg-root-rel` into `CONFIG_SOT_DIR`, places everything else under `asset-root`. Idempotent.
    - `link_configs <engine-dir1> [engine-dir2 ...]`: variadic. Fans out symlinks from every `configs/*.cfg` into each engine dir using relative paths. Refuses to overwrite a real (non-symlink) file at engine path (warns instead). Reaps dangling cfg symlinks. No-op when `PLUTAINER_USE_RAW_CONFIGS=true`.
    - `ensure_config_present`: checks that `CONFIG_FILE` exists at `CONFIG_SOT_DIR`. If absent there but present as a real file at the ALT location, moves it (auto-lift). If absent everywhere, prints a refusal with a `find -iname` case-insensitive hint, returns non-zero.
