@@ -5,10 +5,13 @@ This repository contains the necessary files to build and run dedicated game ser
 The container is available on GitHub Container Registry: `ghcr.io/ayymoss/plutainer:latest`
 
 > **Tag layout:**
-> - `:latest` (and the `:v2` alias) — current Plutainer v2. New volume layout, unified `PLUTAINER_*` environment variables. Built from `main`.
+> - `:latest` (and the `:v2` alias) — current Plutainer v2. New volume layout, unified `PLUTAINER_*` environment variables. Built from `main`. Multi-arch.
+> - `:edge` — **amd64 only.** Published straight from the amd64 build job so it appears within a few minutes instead of waiting on the slower arm64 build. Useful for testing a fresh commit; pulling it on an arm64 host fails with a platform mismatch.
 > - `:v1-final` (and the `:v1` alias) — frozen snapshot of the old v1 image. Legacy `PLUTO_*`/`IW4X_*`/`ALTER_*` env vars, flat `app/gamefiles/` + `app/plutonium/` layout. Shows a deprecation banner on every start. No further updates, fixes, or security patches.
 >
 > **Upgrading from v1?** See [MIGRATION.md](MIGRATION.md) — covers the env var rename, the volume migration command (one `docker run`), and how to pin `:v1-final` if you want to defer the migration.
+
+> **Architecture support:** `linux/amd64` is the primary target. `linux/arm64` is built best-effort — upstream `iw4x/launcher` publishes `x86_64` binaries only, so the arm64 image compiles it from source and is occasionally broken by upstream changes. When that happens `:latest`/`:v2` are published **amd64-only** rather than being held back, and the build log carries a warning. If you run arm64, check `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` before upgrading.
 
 ## Overview
 
@@ -30,6 +33,10 @@ The container includes the installation of Wine, Plutonium, IW4x, and Alterware 
 Before you can use this Docker image, you will need to have the base game files for the server you wish to host. This image does not provide any copyrighted game files. You must legally own the games.
 
 You will also need to have Docker and Docker Compose installed on your system.
+
+The gamefiles mount is read-only and should contain only the base game's own files. Anything the updaters can fetch is written into the `app/` volume instead, so don't stage it in the mount.
+
+For **IW4x** specifically, the mount needs just the stock MW2 install — `main/`, `zone/english/`, `zone/dlc/`, `binkw32.dll`, `localization.txt`, `mss32.dll`. The `iw4x-launcher` fetches everything else into `app/runtime/gamefiles/` on first start (roughly 1–2 GB, kept across container recreation): `iw4x.exe`, `iw4x.dll`, `zonebuilder.exe`, the `iw4x/` asset directory including its `.iwd` archives, all of `zone/patch/` and `zone/zonebuilder/`, and the extra DLC fastfiles. `zone/patch/` and `zone/zonebuilder/` are owned entirely by the launcher — copies of those in your gamefiles mount are ignored, so a slimmed-down server install is fine. Client-only assets (`main/video/`, `logo.bmp`, `splash.bmp`) are never used and can be removed; [`mxve/shrink-iw4x`](https://github.com/mxve/shrink-iw4x) does this properly and ships a Linux binary.
 
 ## Getting Started: `docker-compose.yml`
 
@@ -170,6 +177,16 @@ Top-level `*.cfg` files from each seed bundle land in `app/configs/` (flat). Oth
 | Plutonium T6 | [xerxes-at/T6ServerConfigs](https://github.com/xerxes-at/T6ServerConfigs) |
 | Plutonium IW5 | [xerxes-at/IW5ServerConfig](https://github.com/xerxes-at/IW5ServerConfig) |
 | Alterware T7x | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) (includes `t7x/lobby_scripts/` required for `sv_lobby_mode`) |
+
+> **IW4x is not in this table — it has no bundled seed.** Nothing is copied into `app/configs/` for `PLUTAINER_GAME=iw4x`, so the container will refuse to start with a "config file not found" error until you put one there yourself. The upstream default is [`iw4x/iw4-server-configs`](https://github.com/iw4x/iw4-server-configs); grab `userraw/server.cfg` from it into `app/configs/` and set `PLUTAINER_CONFIG_FILE=server.cfg`:
+>
+> ```bash
+> mkdir -p ./iw4x-1/configs
+> curl -fsSL -o ./iw4x-1/configs/server.cfg \
+>   https://raw.githubusercontent.com/iw4x/iw4-server-configs/main/userraw/server.cfg
+> ```
+>
+> Note that config ships `sv_maprotation` commented out, so `+map_rotate` has nothing to load — set one, or set `PLUTAINER_MAP_ROTATE=false` and drive map selection from a playlist. Remember to set `rcon_password` too, since the healthcheck and `rcon-cli` both read it.
 
 To opt out — for example if you manage configs entirely yourself and don't want any default files appearing in your bind mount — set `PLUTAINER_SKIP_SEED=true`.
 

@@ -7,14 +7,23 @@ name: Build and Push Docker Image
 #   1. `build` matrix runs each platform on its native runner in parallel.
 #      Pushes a single-platform image by digest only (no human tag).
 #      Saves the digest as a workflow artifact.
-#   2. `merge` downloads both digest artifacts, generates the tag list once,
-#      and uses `docker buildx imagetools create` to stitch the per-platform
-#      digests into a single multi-arch manifest published as :latest, :v2,
+#   2. `merge` downloads whichever digest artifacts exist, generates the tag
+#      list once, and uses `docker buildx imagetools create` to stitch the
+#      per-platform digests into a single manifest published as :latest, :v2,
 #      and any release/PR/sha-derived tags.
 #
 # Why: native arm64 runners avoid the 60-90 min QEMU emulation cost while
 # still producing a standard multi-arch manifest so users pull :latest and
 # get the right platform automatically.
+#
+# arm64 is best-effort (`optional: true` + `continue-on-error`). It has no
+# upstream iw4x-launcher binary so it compiles from source, which leaves it
+# exposed to upstream build breakage we cannot pin around. When it fails,
+# amd64 still publishes and `merge` emits a warning rather than blocking the
+# release. amd64 is required: no amd64 digest means no publish at all.
+#
+# :edge is published straight from the amd64 job for fast iteration, so
+# testing never waits on arm64. It is single-platform by design.
 
 on:
   push:
@@ -27,6 +36,11 @@ on:
       - 'EXAMPLE-docker-compose.yml'
   release:
     types: [published]
+  # The GHA cache evicts after 7 idle days, and a cold arm64 job has to compile
+  # the build2 toolchain and the launcher from source (~20 min vs ~3 min warm).
+  # A weekly run keeps the cache alive so it never goes cold in practice.
+  schedule:
+    - cron: '0 4 * * 1'
   workflow_dispatch:
 
 env:
@@ -46,11 +60,18 @@ jobs:
             runs-on: ubuntu-latest
             dockerfile: Dockerfile
             arch: amd64
+            optional: false
           - platform: linux/arm64
             runs-on: ubuntu-24.04-arm
             dockerfile: Dockerfile.arm64
             arch: arm64
+            # Best-effort: arm64 has no upstream iw4x-launcher binary, so it
+            # compiles from source and is exposed to upstream build breakage
+            # we cannot pin around (see README "Architecture support"). A
+            # failure here must not block publishing the amd64 image.
+            optional: true
     runs-on: ${{ matrix.runs-on }}
+    continue-on-error: ${{ matrix.optional }}
 
     permissions:
       contents: read
@@ -86,6 +107,17 @@ jobs:
           provenance: false
           sbom: false
 
+      # Publish a tagged amd64-only image straight from this job so iterating
+      # never waits on the (much slower) arm64 build. :edge is deliberately
+      # single-platform — pulling it on an arm64 host fails with a platform
+      # mismatch. :latest and :v2 remain the multi-arch tags.
+      - name: Tag amd64-only :edge for fast iteration
+        if: matrix.arch == 'amd64'
+        run: |
+          docker buildx imagetools create \
+            -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:edge \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
@@ -110,12 +142,31 @@ jobs:
       packages: write
 
     steps:
+      # Not merge-multiple: keeping one subdirectory per artifact is what lets
+      # the next step tell which platforms actually built.
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
           pattern: digests-*
-          merge-multiple: true
+
+      - name: Check platform coverage
+        run: |
+          if [ ! -d /tmp/digests/digests-amd64 ]; then
+            echo "::error::amd64 digest missing — refusing to publish."
+            exit 1
+          fi
+          if [ -d /tmp/digests/digests-arm64 ]; then
+            echo "Publishing multi-arch: amd64 + arm64."
+            echo "Published **amd64 + arm64**." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::arm64 unavailable — :latest/:v2 will be amd64-only. See README 'Architecture support'."
+            {
+              echo "### :warning: amd64-only publish"
+              echo "The arm64 build did not produce a digest, so \`:latest\`/\`:v2\` carry amd64 only."
+              echo "Pulling them on an arm64 host will fail with a platform mismatch."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -139,11 +190,12 @@ jobs:
             type=ref,event=pr
             type=sha
 
+      # Digests now live one level down (/tmp/digests/digests-<arch>/<digest>),
+      # so collect them with find rather than a cwd glob.
       - name: Create manifest list and push
-        working-directory: /tmp/digests
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+            $(find /tmp/digests -type f -printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%f ')
 
       - name: Inspect image
         run: |

@@ -29,13 +29,32 @@ There are no automated tests or linters. The CI pipeline (`.github/workflows/doc
 
 ## Tags
 
-- `ghcr.io/ayymoss/plutainer:v2` — built from `v2-layout` branch. New volume layout + unified `PLUTAINER_*` env vars. Opt-in. CI workflow tags it only on pushes to `v2-layout`; never promotes to `:latest`.
-- `ghcr.io/ayymoss/plutainer:latest` — built from `main`. Deprecated v1 layout. No further v2 work merges here; bug-only updates if any.
+The `v2-layout` branch is gone — v2 was merged into `main`, so **`main` is v2** and publishes both tags. Anything describing `:latest` as "the deprecated v1 layout" is stale.
 
-CI logic in `.github/workflows/docker-publish.yml`:
-- `type=raw,value=latest,enable={{is_default_branch}}` — only on main.
-- `type=raw,value=v2,enable=${{ github.ref == 'refs/heads/v2-layout' }}` — only on v2-layout.
-- Both branches also get `:sha-<short>`. Branches stay completely separated.
+- `ghcr.io/ayymoss/plutainer:latest` and `:v2` — both built from `main`, both multi-arch, identical content. `:v2` is kept so existing v2 users' compose files keep working.
+- `ghcr.io/ayymoss/plutainer:edge` — **amd64 only**, published directly from the amd64 build job so it lands in ~3 min without waiting on arm64. For iterative testing. Pulling it on arm64 fails with a platform mismatch.
+- `:sha-<short>` on every build; `:<tag>` on releases; `:pr-<n>` on PRs.
+
+Tag logic (`metadata-action` in the `merge` job):
+- `type=raw,value=latest,enable={{is_default_branch}}`
+- `type=raw,value=v2,enable={{is_default_branch}}`
+- `type=ref,event=tag`, `type=ref,event=pr`, `type=sha`
+
+## Architecture support
+
+amd64 is required; **arm64 is best-effort** (`optional: true` + `continue-on-error` in the build matrix). If arm64 fails, amd64 still publishes and `merge` emits a `::warning::` plus a job-summary note; only a missing *amd64* digest blocks a publish.
+
+The asymmetry is upstream's: `iw4x/launcher` ships release binaries for `x86_64-linux` and `x86_64-windows` only, so `Dockerfile` grabs the prebuilt binary while `Dockerfile.arm64` compiles it (and the whole build2 toolchain) from source.
+
+**Known arm64 breakage.** The source build currently fails with:
+
+```
+launcher/pregenerated/launcher/cache/cache-types-odb.hxx:13:2: error: #error ODB runtime version mismatch
+```
+
+The launcher's checked-in *pregenerated* ODB sources guard on `ODB_VERSION != 20551UL` (odb 2.6.0-b.51), but its `manifest` declares `depends: libodb >= 2.6.0-` and its `repositories.manifest` takes odb from `codesynthesis-com/odb.git#master`. odb 2.6.0 final has since been published, so build2 correctly resolves 2.6.0 (`20600`) and the stale generated sources reject it.
+
+Not pinnable from our side: `bpkg` fetches the manifests from the *remote* repo, so patching a local clone has no effect, and the constraint lives in upstream's own manifest. It needs upstream to regenerate their ODB sources (or pin odb). Do not "fix" this by rewriting the version guard — the generated code may not be ABI-compatible with 2.6.0.
 
 ## Architecture
 
