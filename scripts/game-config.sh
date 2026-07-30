@@ -209,16 +209,29 @@ link_dir_contents() {
 
   mkdir -p "$dest"
 
-  if [[ ! -d "$src_root/$name" ]]; then
-    echo "[WARN] missing $src_root/$name — nothing to link into $dest" >&2
+  local src="$src_root/$name"
+  if [[ ! -d "$src" ]]; then
+    echo "[WARN] missing $src — nothing to link into $dest" >&2
     return 0
   fi
 
-  # Guard the glob: bash leaves an unmatched `*` literal, so an empty source
-  # dir would otherwise create a bogus symlink named `*`.
-  if compgen -G "$src_root/$name/*" > /dev/null; then
-    ln -sfn "$src_root/$name"/* "$dest"/
-  fi
+  # Mirror the source's directory skeleton as REAL dirs, then symlink only leaf
+  # entries. Symlinking a subdirectory would inherit the read-only mount and
+  # block writes one level down — e.g. iw4x-launcher extracting into
+  # zone/patch/ dies with "failed to extract file" when zone/patch is a link.
+  local rel
+  while IFS= read -r -d '' rel; do
+    mkdir -p "$dest/$rel"
+  done < <(cd "$src" && find . -mindepth 1 -type d -printf '%P\0')
+
+  # Never clobber a real file already at the destination: an updater may have
+  # written a newer copy there, and that must win over the host's version.
+  while IFS= read -r -d '' rel; do
+    if [[ -e "$dest/$rel" && ! -L "$dest/$rel" ]]; then
+      continue
+    fi
+    ln -sfn "$src/$rel" "$dest/$rel"
+  done < <(cd "$src" && find . \( -type f -o -type l \) -printf '%P\0')
 }
 
 # Copy bundled community seed configs into the volume on first run.
