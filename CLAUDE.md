@@ -56,6 +56,10 @@ The launcher's checked-in *pregenerated* ODB sources guard on `ODB_VERSION != 20
 
 Not pinnable from our side: `bpkg` fetches the manifests from the *remote* repo, so patching a local clone has no effect, and the constraint lives in upstream's own manifest. It needs upstream to regenerate their ODB sources (or pin odb). Do not "fix" this by rewriting the version guard — the generated code may not be ABI-compatible with 2.6.0.
 
+Tracked upstream: **iw4x/launcher#76** (<https://github.com/iw4x/launcher/issues/76>). When that closes, re-run the workflow and arm64 should build again with no change needed on our side.
+
+Worth knowing: `cpp-builder` exists *only* to compile iw4x-launcher, and it is the sole failing stage — `plutonium-updater` (all Plutonium games), Wine, and the T7x path all build fine on arm64. So one broken component currently blocks the whole arm64 image. If upstream stalls, the option is to make the launcher build non-fatal and have `iw4xentry.sh` refuse iw4x with a clear message when the binary is absent (capability check, not an arch check, so it self-heals). That would restore multi-arch `:latest` for the other six games.
+
 ## Architecture
 
 Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All entry scripts run with `set -euo pipefail`.
