@@ -92,6 +92,25 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Both Dockerfiles pull the iw4x-launcher from upstream inside a RUN, so
+      # their layer cache key never changes on its own and an upstream fix (or
+      # a new release) stays invisible until the cache is evicted. Feed the
+      # resolved upstream ref in as a build arg so the cache tracks it: the
+      # release tag for amd64's prebuilt binary, the commit SHA for arm64's
+      # source build.
+      - name: Resolve upstream iw4x-launcher ref
+        id: launcher_ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            ref=$(gh api repos/iw4x/launcher/commits/main --jq '.sha')
+          else
+            ref=$(gh api repos/iw4x/launcher/releases/latest --jq '.tag_name')
+          fi
+          echo "resolved upstream ref: $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
@@ -99,6 +118,8 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
+          build-args: |
+            IW4X_LAUNCHER_REF=${{ steps.launcher_ref.outputs.ref }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}

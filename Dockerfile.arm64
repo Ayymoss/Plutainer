@@ -61,9 +61,19 @@ WORKDIR /build/iw4x-launcher
 # whole arm64 image over it would take Plutonium T4/T5/T6/IW5 and Alterware T7x
 # down with it, none of which need this binary. So record the failure and let
 # iw4xentry.sh refuse only iw4x, at runtime, with an explanation.
-RUN sh bindist-gcc-static.sh -y -j $(nproc) "launcher@https://github.com/iw4x/launcher.git#main" \
- || { echo "WARNING: iw4x-launcher failed to build — this image will NOT support PLUTAINER_GAME=iw4x"; \
-      touch /build/iw4x-launcher-build-failed; }
+# IW4X_LAUNCHER_REF only exists to key the layer cache on upstream's HEAD. The
+# fetch below still uses #main; without this the RUN's command string never
+# changes, so BuildKit reuses the cached layer and upstream fixes are invisible
+# until the cache is evicted. That matters more now than it looks: the `|| {}`
+# below makes this step exit 0 even when the compile fails, so a *failed*
+# launcher build gets cached as a success and would keep shipping the
+# .unavailable marker long after upstream is fixed. CI passes the resolved
+# commit SHA; the `main` default only affects manual local builds.
+ARG IW4X_LAUNCHER_REF=main
+RUN echo "upstream iw4x/launcher ref: ${IW4X_LAUNCHER_REF}" \
+ && { sh bindist-gcc-static.sh -y -j $(nproc) "launcher@https://github.com/iw4x/launcher.git#main" \
+      || { echo "WARNING: iw4x-launcher failed to build — this image will NOT support PLUTAINER_GAME=iw4x"; \
+           touch /build/iw4x-launcher-build-failed; }; }
 
 # /out must never be empty: stage 3 copies the directory (not the file) so that
 # a missing binary does not break the COPY, and BuildKit is happier copying a

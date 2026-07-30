@@ -42,7 +42,14 @@ RUN wget https://github.com/mxve/plutonium-updater.rs/releases/latest/download/p
     tar -xzvf plutonium-updater.tar.gz && \
     rm plutonium-updater.tar.gz
 
-RUN IW4X_URL=$(wget -qO- https://api.github.com/repos/iw4x/launcher/releases/latest \
+# IW4X_LAUNCHER_REF keys the layer cache on upstream's current release tag.
+# The URL is still resolved from releases/latest at build time, but without a
+# changing ARG the RUN's command string is constant, so BuildKit reuses this
+# layer indefinitely and the image can ship a launcher binary many releases
+# out of date. CI passes the resolved tag.
+ARG IW4X_LAUNCHER_REF=latest
+RUN echo "upstream iw4x/launcher release: ${IW4X_LAUNCHER_REF}" && \
+    IW4X_URL=$(wget -qO- https://api.github.com/repos/iw4x/launcher/releases/latest \
       | jq -r '.assets[] | select(.name | test("^launcher-.*linux-glibc\\.tar\\.xz$")) | .browser_download_url') && \
     wget -O iw4x-launcher.tar.xz "$IW4X_URL" && \
     mkdir -p iw4x-launcher-extract && \

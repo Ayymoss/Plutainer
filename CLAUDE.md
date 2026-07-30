@@ -46,7 +46,9 @@ amd64 is required; **arm64 is best-effort** (`optional: true` + `continue-on-err
 
 The asymmetry is upstream's: `iw4x/launcher` ships release binaries for `x86_64-linux` and `x86_64-windows` only, so `Dockerfile` grabs the prebuilt binary while `Dockerfile.arm64` compiles it (and the whole build2 toolchain) from source.
 
-**Known arm64 breakage.** The source build currently fails with:
+**Cache keying (important).** Both Dockerfiles fetch the launcher from upstream *inside* a `RUN`, so their layer cache key never changes on its own and upstream fixes stay invisible until the cache is evicted. CI resolves the upstream ref and passes it as `IW4X_LAUNCHER_REF` (release tag for amd64, commit SHA for arm64) purely to key the cache. This is load-bearing on arm64: the `|| { … }` fallback makes that `RUN` exit 0 even when the compile fails, so a **failed** build is cached as a success and would keep shipping `.unavailable` indefinitely. Don't remove the ARG.
+
+**Previously-known arm64 breakage (resolved upstream 2026-07-30).** iw4x/launcher#76 was fixed: the pregenerated sources were regenerated to `ODB_VERSION != 20600UL` and the dependency pinned to `libodb == 2.6.0` / `libodb-sqlite == 2.6.0`. The degradation path below stays as the safety net for the next time upstream drifts. For the record, the failure was:
 
 ```
 launcher/pregenerated/launcher/cache/cache-types-odb.hxx:13:2: error: #error ODB runtime version mismatch
