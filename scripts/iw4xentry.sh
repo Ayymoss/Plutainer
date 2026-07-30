@@ -22,12 +22,22 @@ mkdir -p "$DEST_DIR"
 echo "Linking files for iw4x..."
 link_files "$SOURCE_DIR" "$DEST_DIR" main usermaps binkw32.dll localization.txt mss32.dll
 
-# userraw/ and zone/ need to be writable, so they get real dirs with the host's
-# contents symlinked in (not a symlink to the read-only mount):
-#   - userraw/ is ENGINE_CONFIG_DIR — link_configs fans cfg symlinks into it.
-#   - zone/ receives the launcher's zone/patch/*.ff alongside the host's zones.
+# userraw/ is ENGINE_CONFIG_DIR, so it must be a real writable dir for
+# link_configs to fan cfg symlinks into.
 link_dir_contents "$SOURCE_DIR" "$DEST_DIR" userraw
-link_dir_contents "$SOURCE_DIR" "$DEST_DIR" zone
+
+# zone/ is split by ownership. The launcher's rawfiles manifest writes every
+# file under zone/patch/ and zone/zonebuilder/, so those must be left entirely
+# to it: a symlink there — at the directory OR the leaf — points into the
+# read-only mount and kills the extract with
+#   [E] failed to extract file: zone/patch/iw4_credits_load.ff
+# Its 56 zone/patch entries are a strict superset of a full MW2 install's 39,
+# and zone/zonebuilder is the single zonebuilder_minigun.ff it also ships, so
+# nothing is lost by not mirroring them. english/ and dlc/ hold the host's map
+# fastfiles, which the launcher never touches (its DLC component writes to
+# iw3/zone/dlc/ instead), so those are mirrored.
+link_dir_contents "$SOURCE_DIR" "$DEST_DIR" zone/english
+link_dir_contents "$SOURCE_DIR" "$DEST_DIR" zone/dlc
 
 # --- Step 2: Update iw4x ---
 # The launcher has no --path flag: it canonicalises /proc/self/exe and uses its

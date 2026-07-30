@@ -201,13 +201,22 @@ link_dir_contents() {
   local src_root="$1" dest_root="$2" name="$3"
   local dest="$dest_root/$name"
 
-  # An older image symlinked the directory itself — undo that so it's writable.
-  if [[ -L "$dest" ]]; then
-    echo "[INFO] Replacing directory symlink $dest with a real directory."
-    rm -f "$dest"
-  fi
-
-  mkdir -p "$dest"
+  # Build the destination path one component at a time, replacing a symlink at
+  # ANY level. `name` may be nested (e.g. zone/english), and an older image
+  # symlinked the parent (`zone`) itself — plain `mkdir -p` would silently
+  # follow that link into the read-only mount instead of replacing it.
+  local -a comps
+  local acc="" comp
+  IFS='/' read -ra comps <<< "$name"
+  for comp in "${comps[@]}"; do
+    [[ -n "$comp" ]] || continue
+    acc="${acc:+$acc/}$comp"
+    if [[ -L "$dest_root/$acc" ]]; then
+      echo "[INFO] Replacing directory symlink $dest_root/$acc with a real directory."
+      rm -f "$dest_root/$acc"
+    fi
+    mkdir -p "$dest_root/$acc"
+  done
 
   local src="$src_root/$name"
   if [[ ! -d "$src" ]]; then
