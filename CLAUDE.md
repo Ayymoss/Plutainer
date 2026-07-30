@@ -47,6 +47,8 @@ Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All e
 
 3. **`iw4xentry.sh`** — IW4x server entrypoint. Same shape: symlinks game files, runs `iw4x-launcher`, fans out config symlinks (engine + optional mod dir), validates, `launch_game wine iw4x.exe`. No seed bundle.
 
+   The launcher has **no `--path` flag** — it canonicalises `/proc/self/exe` and treats its own directory as the installation root, ignoring cwd. So the entrypoint `cp`s the binary from `.plutainer/` into `runtime/gamefiles/` and runs it there, which puts the install root inside the volume. It must be a real copy, not a symlink: `canonical()` would resolve a symlink back to `.plutainer/` (an image layer), and the ~800MB it fetches would be re-downloaded on every container recreate. Launcher outputs, all relative to that root: `iw4x.exe`, `iw4x.dll`, `zonebuilder.exe`, `steam.exe`, `steam_api64.dll`, `iw4x/` (incl. `iw4x_0{0..5}.iwd`), `zone/patch/*.ff`, `zone/zonebuilder/*.ff`, `iw3/zone/dlc/*.ff`, and `cache/iw4x.db` (the update-check marker). Its `clean()` only prunes files tracked in its own DB, so our config and game-file symlinks are untouched. A launcher failure is only fatal on first run (no `iw4x.exe` yet); otherwise it warns and starts the existing install.
+
 4. **`alterentry.sh`** — Alterware (T7x/BO3) entrypoint. Symlinks game files, uses `wget -N` (timestamping) to fetch `t7x.exe` only when upstream is newer, seeds Dss0/t7-server-config bundle, fans out config symlinks, starts `Xvfb` (T7x requires a display), `launch_game wine t7x.exe`. No mod dir (alterware MOD is a Steam Workshop ID).
 
 5. **`game-config.sh`** — Shared shell library sourced by all other scripts. Key helpers:
@@ -59,6 +61,7 @@ Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All e
    - `resolve_config_layout`: sets `CONFIG_SOT_DIR` and `ALT_CONFIG_DIR` based on `PLUTAINER_USE_RAW_CONFIGS`. Default: SOT = `configs/`, ALT = engine dir. With raw mode on: swapped.
    - `resolve_config_path`: convenience wrapper that resolves the engine dir + layout in one call so healthcheck/rcon-cli only need this.
    - `link_files <src> <dest> <name1>...`: existence-guarded symlink helper; replaces unsafe `ln -sf src/{a,b,c} dest/` bash brace expansion.
+   - `link_dir_contents <src_root> <dest_root> <name>`: creates `dest_root/name` as a **real** dir and symlinks the *contents* of `src_root/name` into it. Use instead of `link_files` for any dir that must be writable while also carrying read-only host game files — the engine config dir (`link_configs` fans cfg symlinks into it) or a dir an updater writes into. Symlinking the dir itself would make the path read-only, and `ln -sf src/name dest/` would nest the link as `dest/name/name`. Glob-guarded (no bogus `*` symlink), and replaces a directory symlink left by an older image.
    - `seed_configs <game-key> <asset-root> <cfg-root-rel>`: walks bundled seed, lifts top-level `*.cfg` files inside `cfg-root-rel` into `CONFIG_SOT_DIR`, places everything else under `asset-root`. Idempotent.
    - `link_configs <engine-dir1> [engine-dir2 ...]`: variadic. Fans out symlinks from every `configs/*.cfg` into each engine dir using relative paths. Refuses to overwrite a real (non-symlink) file at engine path (warns instead). Reaps dangling cfg symlinks. No-op when `PLUTAINER_USE_RAW_CONFIGS=true`.
    - `ensure_config_present`: checks that `CONFIG_FILE` exists at `CONFIG_SOT_DIR`. If absent there but present as a real file at the ALT location, moves it (auto-lift). If absent everywhere, prints a refusal with a `find -iname` case-insensitive hint, returns non-zero.
@@ -101,7 +104,7 @@ For Plutonium, `BASE_GAME` is derived by stripping the last two chars from `PLUT
 
 - **Default ports**: iw4x→28960, iw5→27016, t4/t5→28960, t6→4976, t7x→27017.
 - **Engine config dirs** (where the game reads `+exec`'d cfg files): t4 → `runtime/gamefiles/main/`, iw5 → `runtime/gamefiles/admin/`, iw4x → `runtime/gamefiles/userraw/`, t7x → `runtime/gamefiles/zone/`, others → `runtime/plutonium/storage/<base_game>/`.
-- **Command args**: iw5 uses `+set sv_config` and `+start_map_rotate`; others use `+exec` and `+map_rotate`.
+- **Command args**: iw5 uses `+set sv_config` and `+start_map_rotate`; others use `+exec` and `+map_rotate`. The map-rotate arg is opt-out family-wide via `PLUTAINER_MAP_ROTATE=false` (Plutonium + IW4x; T7x never had one).
 - **Game-file symlinks** differ per base game (see `plutoentry.sh` case statement).
 
 ## Compatibility surface

@@ -54,6 +54,7 @@ The container is configured entirely through environment variables. You must set
 | `PLUTAINER_HEALTHCHECK` | Set to `"false"` to disable the RCON health check. | `true` |
 | `PLUTAINER_SKIP_SEED` | Set to `"true"` to skip first-run [config seeding](#bundled-config-seeds). | `false` |
 | `PLUTAINER_EXTRA_ARGS` | Extra arguments appended to the launch command. | |
+| `PLUTAINER_MAP_ROTATE` | Set to `"false"` to drop the automatic map-rotate launch arg (`+map_rotate`, or `+start_map_rotate` on IW5), leaving map selection to your playlist or cfg. Not applicable to T7x. | `true` |
 | `PLUTAINER_USE_RAW_CONFIGS` | Set to `"true"` to put cfg files directly in the engine path under `app/runtime/...` and skip the `app/configs/` symlink system. See [Raw Configs Mode](#raw-configs-mode). | `false` |
 | `PLUTAINER_LOG_SYMLINKS` | Set to `"false"` to disable the [log symlink watcher](#log-symlinks). | `true` |
 | `PLUTAINER_LOG_POLL_INTERVAL` | Seconds between log watcher polls. | `2` |

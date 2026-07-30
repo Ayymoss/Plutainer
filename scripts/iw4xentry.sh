@@ -20,10 +20,32 @@ mkdir -p "$DEST_DIR"
 
 # --- Step 1: Link Game Files ---
 echo "Linking files for iw4x..."
-link_files "$SOURCE_DIR" "$DEST_DIR" main zone binkw32.dll localization.txt mss32.dll
+link_files "$SOURCE_DIR" "$DEST_DIR" main usermaps binkw32.dll localization.txt mss32.dll
+
+# userraw/ and zone/ need to be writable, so they get real dirs with the host's
+# contents symlinked in (not a symlink to the read-only mount):
+#   - userraw/ is ENGINE_CONFIG_DIR — link_configs fans cfg symlinks into it.
+#   - zone/ receives the launcher's zone/patch/*.ff alongside the host's zones.
+link_dir_contents "$SOURCE_DIR" "$DEST_DIR" userraw
+link_dir_contents "$SOURCE_DIR" "$DEST_DIR" zone
 
 # --- Step 2: Update iw4x ---
-IW4X_CACHE_LOC="$DEST_DIR/launcher/cache.json"
+# The launcher has no --path flag: it canonicalises /proc/self/exe and uses its
+# own directory as the installation root, ignoring our cwd. So run a copy from
+# inside the volume — that way the ~800MB it fetches (iw4x.exe, iw4x.dll,
+# iw4x/*.iwd, zone/patch/*.ff, iw3/zone/dlc/*.ff, steam.exe) lands in the bind
+# mount and survives container recreation instead of filling the image layer.
+# It must be a real copy: a symlink would canonicalise straight back to
+# /home/plutainer/.plutainer and reinstate the ephemeral install root.
+IW4X_LAUNCHER_SRC="/home/plutainer/.plutainer/iw4x-launcher"
+IW4X_LAUNCHER="$DEST_DIR/iw4x-launcher"
+if [[ ! -f "$IW4X_LAUNCHER" || "$IW4X_LAUNCHER_SRC" -nt "$IW4X_LAUNCHER" ]]; then
+  echo "Staging iw4x-launcher into the game directory..."
+  cp -f "$IW4X_LAUNCHER_SRC" "$IW4X_LAUNCHER"
+  chmod +x "$IW4X_LAUNCHER"
+fi
+
+IW4X_CACHE_LOC="$DEST_DIR/cache/iw4x.db"
 if [[ -f "$IW4X_CACHE_LOC" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
   echo "Skipping iw4x update because PLUTAINER_AUTO_UPDATE is set to 'false'."
 else
@@ -32,7 +54,15 @@ else
   else
     echo "First container run detected. Downloading iw4x initial files..."
   fi
-  /home/plutainer/.plutainer/iw4x-launcher --path "$DEST_DIR" --skip-launch --no-self-update
+  # Don't let a GitHub/CDN outage take a working server down: only a first-run
+  # failure (no iw4x.exe yet) is fatal.
+  if ! "$IW4X_LAUNCHER" --skip-launch --no-self-update; then
+    if [[ -f "$DEST_DIR/iw4x.exe" ]]; then
+      echo "[WARN] iw4x-launcher failed — starting with the existing install." >&2
+    else
+      hold_indefinitely "iw4x-launcher failed and no iw4x.exe is present. Check network access to github.com and cdn.iw4x.io, and that the app volume is not mounted 'noexec' (the launcher runs from $DEST_DIR)."
+    fi
+  fi
 fi
 
 cd "$DEST_DIR"
@@ -86,7 +116,10 @@ if [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]]; then
     CMD_ARGS+=(${PLUTAINER_EXTRA_ARGS})
 fi
 
-CMD_ARGS+=(+map_rotate)
+# Opt-out: an unconditional +map_rotate overrides playlist-driven map selection.
+if [[ "${PLUTAINER_MAP_ROTATE:-true}" != "false" ]]; then
+    CMD_ARGS+=(+map_rotate)
+fi
 
 # --- Step 7: Launch (with 30s crash throttle) ---
 /home/plutainer/.plutainer/log-watcher.sh &

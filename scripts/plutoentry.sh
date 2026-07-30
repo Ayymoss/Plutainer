@@ -126,10 +126,14 @@ if [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]]; then
     CMD_ARGS+=(${PLUTAINER_EXTRA_ARGS})
 fi
 
-if [[ "${BASE_GAME}" == "iw5" ]]; then
-    CMD_ARGS+=(+start_map_rotate)
-else
-    CMD_ARGS+=(+map_rotate)
+# Opt-out: an unconditional map-rotate arg overrides playlist- or cfg-driven
+# map selection. iw5 spells it differently to the rest of the family.
+if [[ "${PLUTAINER_MAP_ROTATE:-true}" != "false" ]]; then
+    if [[ "${BASE_GAME}" == "iw5" ]]; then
+        CMD_ARGS+=(+start_map_rotate)
+    else
+        CMD_ARGS+=(+map_rotate)
+    fi
 fi
 
 # --- Step 8: Launch (with 30s crash throttle) ---

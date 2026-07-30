@@ -187,6 +187,40 @@ link_files() {
   done
 }
 
+# Create <dest_root>/<name> as a REAL directory and symlink the *contents* of
+# <src_root>/<name> into it. Use this instead of link_files wherever we must
+# write into a directory that also carries read-only host game files:
+#   - the engine config dir, where link_configs fans out cfg symlinks;
+#   - any dir an updater writes into (e.g. iw4x-launcher's zone/patch/*.ff).
+# Symlinking the directory itself would make the whole path read-only, and
+# `ln -sf src/name dest/` would nest the link *inside* an existing dir as
+# dest/name/name. Idempotent, and replaces a directory symlink left behind by
+# an older image version.
+# Usage: link_dir_contents <source_root> <dest_root> <name>
+link_dir_contents() {
+  local src_root="$1" dest_root="$2" name="$3"
+  local dest="$dest_root/$name"
+
+  # An older image symlinked the directory itself — undo that so it's writable.
+  if [[ -L "$dest" ]]; then
+    echo "[INFO] Replacing directory symlink $dest with a real directory."
+    rm -f "$dest"
+  fi
+
+  mkdir -p "$dest"
+
+  if [[ ! -d "$src_root/$name" ]]; then
+    echo "[WARN] missing $src_root/$name — nothing to link into $dest" >&2
+    return 0
+  fi
+
+  # Guard the glob: bash leaves an unmatched `*` literal, so an empty source
+  # dir would otherwise create a bogus symlink named `*`.
+  if compgen -G "$src_root/$name/*" > /dev/null; then
+    ln -sfn "$src_root/$name"/* "$dest"/
+  fi
+}
+
 # Copy bundled community seed configs into the volume on first run.
 # Strategy:
 #   - Top-level *.cfg files inside the seed's "config root" subdir
