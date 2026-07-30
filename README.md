@@ -177,16 +177,13 @@ Top-level `*.cfg` files from each seed bundle land in `app/configs/` (flat). Oth
 | Plutonium T6 | [xerxes-at/T6ServerConfigs](https://github.com/xerxes-at/T6ServerConfigs) |
 | Plutonium IW5 | [xerxes-at/IW5ServerConfig](https://github.com/xerxes-at/IW5ServerConfig) |
 | Alterware T7x | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) (includes `t7x/lobby_scripts/` required for `sv_lobby_mode`) |
+| IW4x | [iw4x/iw4-server-configs](https://github.com/iw4x/iw4-server-configs) (`userraw/` — `server.cfg`, `serverlan.cfg`, `partyserver.cfg`, `partyserverlan.cfg`, plus the playlist `*.info` files) |
 
-> **IW4x is not in this table — it has no bundled seed.** Nothing is copied into `app/configs/` for `PLUTAINER_GAME=iw4x`, so the container will refuse to start with a "config file not found" error until you put one there yourself. The upstream default is [`iw4x/iw4-server-configs`](https://github.com/iw4x/iw4-server-configs); grab `userraw/server.cfg` from it into `app/configs/` and set `PLUTAINER_CONFIG_FILE=server.cfg`:
->
-> ```bash
-> mkdir -p ./iw4x-1/configs
-> curl -fsSL -o ./iw4x-1/configs/server.cfg \
->   https://raw.githubusercontent.com/iw4x/iw4-server-configs/main/userraw/server.cfg
-> ```
->
-> Note that config ships `sv_maprotation` commented out, so `+map_rotate` has nothing to load — set one, or set `PLUTAINER_MAP_ROTATE=false` and drive map selection from a playlist. Remember to set `rcon_password` too, since the healthcheck and `rcon-cli` both read it.
+For IW4x that gives you four configs in `app/configs/` — set `PLUTAINER_CONFIG_FILE` to whichever you want (`server.cfg` is the normal dedicated one; the `partyserver*` pair run lobby mode off playlists instead). The playlist `*.info` files land under `app/runtime/gamefiles/userraw/`.
+
+> **One deviation from upstream:** `iw4x/iw4-server-configs` ships `sv_maprotation` commented out, which would leave `+map_rotate` with nothing to load on a first run. Plutainer appends a stock-MW2 rotation to `server.cfg` and `serverlan.cfg` at image build time, marked with an `// Added by Plutainer` comment block. Stock maps only, so it works without the DLC fastfiles. Edit it freely, or set `PLUTAINER_MAP_ROTATE=false` to drive map selection from a playlist.
+
+**Set `rcon_password` before you rely on the healthcheck.** Every one of these upstream repos ships it empty, and the healthcheck works by sending an RCON `status` — so until you set one, a seeded server starts and plays fine but reports `unhealthy`. `rcon-cli` needs it too.
 
 To opt out — for example if you manage configs entirely yourself and don't want any default files appearing in your bind mount — set `PLUTAINER_SKIP_SEED=true`.
 

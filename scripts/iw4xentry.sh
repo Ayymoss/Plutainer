@@ -89,8 +89,16 @@ cd "$DEST_DIR"
 # --- Step 3a: Auto-lift any user-placed real cfg from engine path ---
 auto_lift_user_config
 
-# --- Step 3b: Fan-out configs/ → engine + mod config dirs ---
-# No seed_configs call: iw4x has no bundled community seed.
+# --- Step 3b: Seed default configs from bundled community repo ---
+# The iw4x seed bundle has a single top-level dir, `userraw/`. cfg_root_rel
+# lifts its top-level *.cfg (server, serverlan, partyserver, partyserverlan)
+# into CONFIG_SOT_DIR; the playlist *.info files stay under
+# runtime/gamefiles/userraw/ where the engine expects them.
+if [[ "${PLUTAINER_SKIP_SEED:-}" != "true" ]]; then
+  seed_configs iw4x "$DEST_DIR" "userraw"
+fi
+
+# --- Step 3c: Fan-out configs/ → engine + mod config dirs ---
 link_configs "$ENGINE_CONFIG_DIR" "$MOD_CONFIG_DIR"
 
 # --- Step 4: Validate environment + ensure config file exists ---
