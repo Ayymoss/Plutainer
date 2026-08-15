@@ -1,7 +1,16 @@
 #!/bin/bash
 #
-# This script checks the server's health by determining the correct game,
-# port, and config, and then sending an RCON "status" command.
+# Liveness check: ask the server for its status over the Quake3 UDP protocol
+# and require it to name a loaded map.
+#
+# Uses the unauthenticated `getstatus` query rather than RCON `status`. Both are
+# handled by the same connectionless-packet path inside the same server frame
+# loop, and both report the map from the same `mapname`/`sv_mapname` cvar, so a
+# soft-crash that stops the loop (or drops the map) fails this check exactly as
+# it failed the RCON one — no reply at all, or a reply with no map. What RCON
+# added was a credential dependency: a server with an empty `rcon_password`
+# (which is what every bundled seed config ships) could never report healthy,
+# no matter how well it was running.
 #
 
 set -e
@@ -20,16 +29,7 @@ if [[ "${HEALTHCHECK_FLAG}" == "false" ]]; then
   exit 0
 fi
 
-# --- Step 3: Validate that required variables are set ---
-echo "[INFO] Validating required environment variables..."
-if [[ -z "${GAME_NAME}" || -z "${CONFIG_FILE}" ]]; then
-  echo "[ERROR] Required env vars are missing for the detected game type." >&2
-  exit 1
-fi
-echo "       - Game='${GAME_NAME}'"
-echo "       - Config File='${CONFIG_FILE}'"
-
-# --- Step 4: Determine the correct port to check ---
+# --- Step 3: Determine the correct port to check ---
 echo "[INFO] Determining server port..."
 HEALTHCHECK_PORT=${CUSTOM_PORT}
 if [[ -z "${HEALTHCHECK_PORT}" ]]; then
@@ -41,41 +41,51 @@ else
   echo "       - Using custom port: ${HEALTHCHECK_PORT}."
 fi
 
-# --- Step 5: Determine the game-specific config file path ---
-echo "[INFO] Determining configuration file path..."
-resolve_config_path || exit 1
-echo "       - Expecting config file at: ${CONFIG_PATH}"
-
-if [[ ! -f "${CONFIG_PATH}" ]]; then
-  echo "[ERROR] Config file not found at ${CONFIG_PATH}" >&2
-  exit 1
-fi
-
-# --- Step 6: Extract RCON password from config ---
-echo "[INFO] Extracting RCON password from config..."
-extract_rcon_password || exit 1
-echo "       - RCON password extracted successfully."
-
-# --- Step 7: Query the server ---
+# --- Step 4: Query the server ---
 echo "[INFO] Querying server at 127.0.0.1:${HEALTHCHECK_PORT}..."
 RESPONSE=$(python3 -c "
 import sys
 import pyquake3
 
-try:
-    port = '${HEALTHCHECK_PORT}'
-    password = '${RCON_PASSWORD}'
-    server = pyquake3.PyQuake3(f'127.0.0.1:{port}', rcon_password=password)
-    print(server.rcon('status'))
-except Exception as e:
-    print(f'RCON connection failed: {e}', file=sys.stderr)
-    sys.exit(1)
-")
+# Engines disagree on the key's case: iw4x/t4/t5/t6 answer 'mapname', t7x
+# answers 'MapName'. Match case-insensitively rather than guessing per game.
+MAP_KEYS = ('mapname', 'sv_mapname')
 
-# --- Step 8: Validate the server's response ---
+# getstatus first, getinfo second, and the order matters both ways:
+#   * IW5 (MW3) does not answer getstatus at all — only getinfo.
+#   * T7x answers both, but its infoResponse advertises the lobby's map while
+#     statusResponse reports the map actually running, so preferring getinfo
+#     would report the wrong map on a healthy server.
+QUERIES = ('getstatus', 'getinfo')
+
+server = pyquake3.PyQuake3('127.0.0.1:${HEALTHCHECK_PORT}')
+
+problems = []
+for query in QUERIES:
+    try:
+        values = server.query_values(query)
+    except Exception as e:
+        problems.append('%s: %s' % (query, e))
+        continue
+
+    for key, value in values.items():
+        if key.strip().lower() in MAP_KEYS and (value or '').strip():
+            print('map: %s (via %s)' % (value.strip(), query))
+            sys.exit(0)
+
+    problems.append('%s: replied without a map name' % query)
+
+print('; '.join(problems), file=sys.stderr)
+sys.exit(1)
+") || {
+  echo "[ERROR] Server did not report a loaded map on port ${HEALTHCHECK_PORT}." >&2
+  exit 1
+}
+
+# --- Step 5: Validate the server's response ---
 echo "[INFO] Validating server response..."
 if echo "${RESPONSE}" | grep -q "map:"; then
-  echo "[OK] Health check passed: Server is responsive on port ${HEALTHCHECK_PORT}."
+  echo "[OK] Health check passed: Server is responsive on port ${HEALTHCHECK_PORT} (${RESPONSE})."
   exit 0
 else
   echo "[ERROR] Server response did not contain 'map:'" >&2

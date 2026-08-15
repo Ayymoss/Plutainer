@@ -60,6 +60,7 @@ derive_family() {
     iw5mp|t4mp|t4sp|t5mp|t5sp|t6mp|t6zm) echo "plutonium" ;;
     iw4x)                                echo "iw4x" ;;
     t7x)                                 echo "alterware" ;;
+    cod4x)                               echo "cod4x" ;;
     *)                                   return 1 ;;
   esac
 }
@@ -82,6 +83,7 @@ detect_game_type() {
     plutonium) BASE_GAME="${GAME_NAME%??}" ;;
     iw4x)      BASE_GAME="iw4x" ;;
     alterware) BASE_GAME="${GAME_NAME}" ;;
+    cod4x)     BASE_GAME="cod4x" ;;
   esac
 
   CONFIG_FILE="${PLUTAINER_CONFIG_FILE:-}"
@@ -98,6 +100,7 @@ resolve_default_port() {
     "t4" | "t5") DEFAULT_PORT="28960" ;;
     "t6")        DEFAULT_PORT="4976"  ;;
     "t7x")       DEFAULT_PORT="27017" ;;
+    "cod4x")     DEFAULT_PORT="28960" ;;
     *)
       echo "[ERROR] Could not determine default port for game '${base_game}'." >&2
       return 1
@@ -119,6 +122,7 @@ resolve_engine_config_dir() {
       ;;
     iw4x)      ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/userraw" ;;
     alterware) ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone" ;;
+    cod4x)     ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/main" ;;
     *)
       echo "[ERROR] Unknown game type '${GAME_TYPE}'." >&2
       return 1
@@ -249,6 +253,13 @@ link_dir_contents() {
     fi
     ln -sfn "$src/$rel" "$dest/$rel"
   done < <(cd "$src" && find . \( -type f -o -type l \) -printf '%P\0')
+
+  # Reap symlinks whose target no longer exists in the mount. Without this,
+  # trimming the gamefiles mount leaves the volume full of dangling links that
+  # persist for the life of the volume — the engine then sees entries it cannot
+  # open, and the layout stops reflecting what is actually mounted. Only
+  # symlinks are removed, so a real file written here by an updater is safe.
+  find "$dest" -xtype l -delete 2>/dev/null || true
 }
 
 # Copy bundled community seed configs into the volume on first run.
@@ -268,6 +279,9 @@ seed_configs() {
   local rel parent dest
   while IFS= read -r -d '' relpath; do
     rel="${relpath#./}"
+    # Provenance metadata for the vendored seed (upstream repo + commit). It
+    # belongs to the image, not the user's volume.
+    [[ "$rel" == "SOURCE" ]] && continue
     parent="$(dirname "$rel")"
     [[ "$parent" == "." ]] && parent=""
     if [[ "$rel" == *.cfg && "$parent" == "$cfg_root_rel" ]]; then
@@ -564,5 +578,164 @@ extract_rcon_password() {
   if [[ -z "$RCON_PASSWORD" ]]; then
     _rcon_missing_warning
     return 1
+  fi
+}
+
+# Build the `+rconWhitelistAdd` launch args that let an admin tool in another
+# container reach RCON, and populate RCON_WHITELIST_ARGS with them.
+#
+# T5 and T6 gate *unauthenticated* queries — `getinfo` and `getstatus` — on the
+# RCON whitelist, not just RCON commands, and an empty whitelist does NOT mean
+# "everyone" for those (it does for RCON commands). Since IW4MAdmin's T5/T6
+# parsers open with `getinfo`, a sidecar admin container can complete the RCON
+# handshake and still fail to attach. Measured on T6 zombies, off-loopback:
+#
+#   whitelist state          RCON      getinfo
+#   upstream placeholders    blocked   blocked
+#   empty                    works     blocked
+#   gateway whitelisted      works     works
+#
+# Traffic from a container on another Docker network arrives from this
+# container's own bridge gateway, whose address is assigned at run time and so
+# cannot be baked into a config file — hence detecting it here. Passed as a
+# launch arg rather than written into the user's cfg, so nothing is mutated and
+# the value tracks the network on every start.
+#
+# T4 and IW5 do not gate queries this way and are left alone: adding an entry
+# makes their whitelist non-empty, which would newly restrict RCON to the
+# listed addresses for no benefit. iw4x and t7x have no such command at all.
+#
+# Adding entries does mean T5/T6 RCON becomes "whitelisted + loopback only",
+# which is the same posture upstream's placeholder entries intended (and what
+# a working IW4MAdmin deployment ends up doing by hand). An admin tool on
+# another machine needs its address in PLUTAINER_RCON_WHITELIST.
+resolve_rcon_whitelist_args() {
+  RCON_WHITELIST_ARGS=()
+
+  case "${BASE_GAME:-}" in
+    t5|t6) ;;
+    *) return 0 ;;
+  esac
+
+  local -a addresses=()
+
+  if [[ "${PLUTAINER_RCON_WHITELIST_GATEWAY:-true}" != "false" ]]; then
+    local gateway
+    gateway=$(ip route 2>/dev/null | awk '/^default/ {print $3; exit}')
+    if [[ -n "$gateway" ]]; then
+      addresses+=("$gateway")
+    else
+      echo "[WARN] Could not determine the container's default gateway; RCON from a sidecar admin tool may be refused." >&2
+    fi
+  fi
+
+  # Extra hosts (an admin tool on another machine, say). Comma or space separated.
+  if [[ -n "${PLUTAINER_RCON_WHITELIST:-}" ]]; then
+    local entry
+    for entry in ${PLUTAINER_RCON_WHITELIST//,/ }; do
+      [[ -n "$entry" ]] && addresses+=("$entry")
+    done
+  fi
+
+  [[ ${#addresses[@]} -gt 0 ]] || return 0
+
+  local address
+  for address in "${addresses[@]}"; do
+    RCON_WHITELIST_ARGS+=(+rconWhitelistAdd "$address")
+  done
+
+  echo "[INFO] RCON whitelist: ${addresses[*]} (loopback is always permitted)."
+}
+
+# Write PLUTAINER_RCON_PASSWORD into the source-of-truth config file.
+#
+# Opt-in only. Unset (or set to the empty string, which is what an unfilled
+# compose variable looks like) means "leave the config alone" — it never nulls
+# out a password the user already put there by hand. There is deliberately no
+# default value: a shipped placeholder would be a known credential on a UDP
+# port that anyone can find by scanning for `getstatus` responders.
+#
+# Rewrites the value in place, keeping the rest of the line (upstream seeds put
+# an explanatory // comment after it), or appends a line if the config has none.
+apply_rcon_password() {
+  local desired="${PLUTAINER_RCON_PASSWORD:-}"
+  [[ -n "$desired" ]] || return 0
+
+  local target="${CONFIG_SOT_DIR}/${CONFIG_FILE}"
+  if [[ ! -f "$target" ]]; then
+    echo "[WARN] PLUTAINER_RCON_PASSWORD is set but ${target} does not exist — skipping." >&2
+    return 0
+  fi
+
+  # Python rather than sed: the password is arbitrary user input and would need
+  # escaping against sed's replacement metacharacters (& \ and the delimiter).
+  local result
+  result=$(RCON_TARGET="$target" RCON_DESIRED="$desired" python3 - <<'PY'
+import os
+import re
+import sys
+
+path = os.environ['RCON_TARGET']
+desired = os.environ['RCON_DESIRED']
+
+with open(path, 'r', encoding='utf-8', errors='surrogateescape') as fh:
+    lines = fh.read().split('\n')
+
+# Same forms extract_rcon_password() reads back, so a value written here is
+# always one it can find again.
+pattern = re.compile(
+    r'^(?P<lead>\s*(?:set[a]?\s+)?rcon_password\s+)'
+    r'(?P<value>"[^"]*"|\'[^\']*\'|\S+)'
+    r'(?P<rest>.*)$',
+    re.IGNORECASE,
+)
+
+replacement = '"%s"' % desired.replace('"', '')
+changed = False
+matched = False
+
+for i, line in enumerate(lines):
+    # Ignore fully commented lines; a commented-out password is not in effect.
+    if line.lstrip().startswith('//'):
+        continue
+    m = pattern.match(line)
+    if not m:
+        continue
+    matched = True
+    if m.group('value') == replacement:
+        continue
+    lines[i] = m.group('lead') + replacement + m.group('rest')
+    changed = True
+
+if not matched:
+    if lines and lines[-1] == '':
+        lines.pop()
+    lines.extend([
+        '',
+        '// Added by Plutainer from PLUTAINER_RCON_PASSWORD.',
+        'set rcon_password %s' % replacement,
+        '',
+    ])
+    changed = True
+
+if changed:
+    with open(path, 'w', encoding='utf-8', errors='surrogateescape') as fh:
+        fh.write('\n'.join(lines))
+
+print('changed' if changed else 'unchanged')
+PY
+  ) || {
+    echo "[WARN] Could not apply PLUTAINER_RCON_PASSWORD to ${target}." >&2
+    return 0
+  }
+
+  if [[ "$result" == "changed" ]]; then
+    echo "[INFO] rcon_password set from PLUTAINER_RCON_PASSWORD (${#desired} chars) in ${CONFIG_FILE}."
+  else
+    echo "[INFO] rcon_password in ${CONFIG_FILE} already matches PLUTAINER_RCON_PASSWORD."
+  fi
+
+  if [[ "$desired" == *'"'* ]]; then
+    echo "[WARN] PLUTAINER_RCON_PASSWORD contained double quotes; they were stripped before writing." >&2
   fi
 }

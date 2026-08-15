@@ -1,0 +1,11 @@
+upstream:   https://github.com/xerxes-at/IW5ServerConfig
+branch:     master
+commit:     d3c31805d02b6f6ce9d928d34e55d6b5ef78a7a8
+tree:       https://github.com/xerxes-at/IW5ServerConfig/tree/d3c31805d02b6f6ce9d928d34e55d6b5ef78a7a8
+subpaths:   admin
+license:    none declared
+fetched:    2026-08-15T11:36:07Z
+fetched-by: tools/refresh-seeds.sh
+
+Vendored copy. Do not hand-edit: run tools/refresh-seeds.sh iw5 instead,
+so the recorded commit stays honest about what is in this directory.

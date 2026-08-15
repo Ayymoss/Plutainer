@@ -1,0 +1,55 @@
+///////////////////////////////////////////////////////////////////////////
+///////////Modern Warfare 3 dedicated server default playlist//////////////
+///////////////////////////////////////////////////////////////////////////
+
+//format is 
+//<mapname>, <dsr filename>, <weight>
+
+//<mapname>
+//valid mapnames:
+//*
+//mp_alpha
+//mp_bootleg
+//mp_bravo
+//mp_carbon
+//mp_dome
+//mp_exchange
+//mp_hardhat
+//mp_interchange
+//mp_lambeth
+//mp_mogadishu
+//mp_paris
+//mp_plaza2
+//mp_radar
+//mp_seatown
+//mp_underground
+//mp_village
+//<dlc maps> (included under '*')
+
+//dsr filename
+//name of recipe file without the dsr extension
+//included in this package are the following recipe defaults:
+//TDM_default 	(Team Deathmatch)
+//DOM_default 	(Domination)
+//CTF_default 	(Capture The Flag)
+//DZ_default  	(Drop Zone)
+//FFA_default 	(Free For All)
+//GG_default	(Gun Game)
+//HQ_default	(Headquarters)
+//INF_default	(Infected)
+//JUG_default	(Juggernaut)
+//KC_default	(Kill Confirmed)
+//OIC_default	(One In The Chamber)
+//SAB_default	(Sabotage)
+//SD_default	(Search and Destroy)
+//TDEF_default	(Team Defender)
+//TJ_default	(Team Juggernaut)
+
+// Weight (1->1000)
+// Selection is weighted random (higher weights increase selection chance)
+
+*,TDM_default,1
+mp_alpha,DOM_default,1
+mp_bootleg,DOM_default,1
+*,TDEF_default,1000
+mp_bravo,JUG_default,1

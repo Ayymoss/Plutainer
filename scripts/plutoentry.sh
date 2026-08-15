@@ -93,6 +93,9 @@ if ! ensure_config_present; then
   hold_indefinitely "Config file not found. See [ERROR] above."
 fi
 
+# Opt-in; a no-op unless PLUTAINER_RCON_PASSWORD is set to something non-empty.
+apply_rcon_password
+
 # --- Step 6: Resolve port ---
 if [[ -z "${PLUTAINER_PORT:-}" ]]; then
   echo "PLUTAINER_PORT not set, using default for ${BASE_GAME}..."
@@ -121,6 +124,14 @@ if [[ -n "${PLUTAINER_MOD:-}" ]]; then
 fi
 if [[ -n "${PLUTO_MAX_CLIENTS:-}" ]]; then
     CMD_ARGS+=(+set sv_maxclients "${PLUTO_MAX_CLIENTS}")
+fi
+
+# Must come after +exec: the cfg's own rconWhitelistAdd lines (if the user
+# re-enabled any) are additive, and these entries are what let an admin tool
+# in another container query T5/T6 at all. No-op for other games.
+resolve_rcon_whitelist_args
+if [[ ${#RCON_WHITELIST_ARGS[@]} -gt 0 ]]; then
+    CMD_ARGS+=("${RCON_WHITELIST_ARGS[@]}")
 fi
 if [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]]; then
     CMD_ARGS+=(${PLUTAINER_EXTRA_ARGS})

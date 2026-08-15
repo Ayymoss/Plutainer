@@ -1,0 +1,11 @@
+upstream:   https://github.com/Dss0/t7-server-config
+branch:     main
+commit:     f1547ae09851aa48ac71c338a78493eb88c85d49
+tree:       https://github.com/Dss0/t7-server-config/tree/f1547ae09851aa48ac71c338a78493eb88c85d49
+subpaths:   zone:zone,t7x:t7x
+license:    none declared
+fetched:    2026-08-15T11:36:08Z
+fetched-by: tools/refresh-seeds.sh
+
+Vendored copy. Do not hand-edit: run tools/refresh-seeds.sh t7x instead,
+so the recorded commit stays honest about what is in this directory.

@@ -1,0 +1,11 @@
+upstream:   https://github.com/xerxes-at/T6ServerConfigs
+branch:     master
+commit:     6d3b313acab5b5e21d61277bd1d2f3b234dc4918
+tree:       https://github.com/xerxes-at/T6ServerConfigs/tree/6d3b313acab5b5e21d61277bd1d2f3b234dc4918
+subpaths:   localappdata/Plutonium/storage/t6
+license:    none declared
+fetched:    2026-08-15T11:36:06Z
+fetched-by: tools/refresh-seeds.sh
+
+Vendored copy. Do not hand-edit: run tools/refresh-seeds.sh t6 instead,
+so the recorded commit stays honest about what is in this directory.

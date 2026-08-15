@@ -127,6 +127,9 @@ if ! ensure_config_present; then
   hold_indefinitely "Config file not found. See [ERROR] above."
 fi
 
+# Opt-in; a no-op unless PLUTAINER_RCON_PASSWORD is set to something non-empty.
+apply_rcon_password
+
 # --- Step 5: Resolve port ---
 if [[ -z "${PLUTAINER_PORT:-}" ]]; then
   echo "PLUTAINER_PORT not set, using default for iw4x..."

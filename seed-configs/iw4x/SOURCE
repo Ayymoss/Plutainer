@@ -1,0 +1,11 @@
+upstream:   https://github.com/iw4x/iw4-server-configs
+branch:     main
+commit:     10445a4a9dfa95c7dd16ad5939cf9d35f9d0d13d
+tree:       https://github.com/iw4x/iw4-server-configs/tree/10445a4a9dfa95c7dd16ad5939cf9d35f9d0d13d
+subpaths:   userraw:userraw
+license:    BSD-3-Clause
+fetched:    2026-08-15T11:36:09Z
+fetched-by: tools/refresh-seeds.sh
+
+Vendored copy. Do not hand-edit: run tools/refresh-seeds.sh iw4x instead,
+so the recorded commit stays honest about what is in this directory.

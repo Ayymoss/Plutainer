@@ -1,0 +1,11 @@
+upstream:   https://github.com/xerxes-at/T4ServerConfigs
+branch:     main
+commit:     8eaebce994c1dcc724af61f6aaadcc7d81e4f7d9
+tree:       https://github.com/xerxes-at/T4ServerConfigs/tree/8eaebce994c1dcc724af61f6aaadcc7d81e4f7d9
+subpaths:   main
+license:    none declared
+fetched:    2026-08-15T11:36:03Z
+fetched-by: tools/refresh-seeds.sh
+
+Vendored copy. Do not hand-edit: run tools/refresh-seeds.sh t4 instead,
+so the recorded commit stays honest about what is in this directory.

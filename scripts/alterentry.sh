@@ -82,6 +82,9 @@ if ! ensure_config_present; then
   hold_indefinitely "Config file not found. See [ERROR] above."
 fi
 
+# Opt-in; a no-op unless PLUTAINER_RCON_PASSWORD is set to something non-empty.
+apply_rcon_password
+
 # --- Step 6: Resolve port ---
 if [[ -z "${PLUTAINER_PORT:-}" ]]; then
   echo "PLUTAINER_PORT not set, using default for t7x..."
@@ -92,6 +95,7 @@ fi
 
 # --- Step 7: Build Server Command Arguments ---
 declare -a CMD_ARGS=(
+    -headless
     -dedicated
     +set fs_game "${PLUTAINER_MOD:-}"
     +set net_port "${PLUTAINER_PORT}"
@@ -104,13 +108,10 @@ if [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]]; then
 fi
 
 # --- Step 8: Launch (with 30s crash throttle) ---
-# T7x requires a display even in dedicated/headless mode, so start a virtual
-# framebuffer for Wine before launching.
-echo "Starting virtual display..."
-rm -f /tmp/.X99-lock
-Xvfb :99 -screen 0 320x240x24 &
-sleep 1
-
+# `-headless` makes t7x skip Sys_CreateConsole and print to stdout instead of a
+# Win32 console window, so no X display is needed. Without it the server hangs
+# on window creation ("nodrv_CreateWindow") and never binds its port, which is
+# why this used to start Xvfb.
 /home/plutainer/.plutainer/log-watcher.sh &
 
 echo "Starting T7x Server: ${PLUTAINER_SERVER_NAME}"

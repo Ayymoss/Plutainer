@@ -1,0 +1,13 @@
+maintained-in-repo: yes
+refreshed-by:       nothing — edit main/server.cfg directly and commit
+
+Unlike the other seeds, this one is not tracked from an upstream repository and
+tools/refresh-seeds.sh does not touch it. It is a single server.cfg, so pinning
+a commit and pruning a checkout would add machinery with no upstream to drift
+from.
+
+Originally adapted from https://github.com/matracey/docker-cod4 (server.cfg, no
+declared license). Plutainer changes: the shipped placeholder rcon_password
+"my_rcon_password" is blanked — a known credential in a published image is worth
+nothing to the operator and plenty to anyone scanning for servers. Set one with
+PLUTAINER_RCON_PASSWORD or by editing app/configs/server.cfg.

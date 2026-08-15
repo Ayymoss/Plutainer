@@ -69,4 +69,8 @@ case "$GAME_TYPE" in
     echo "Alterware game detected (${GAME_NAME}). Handing off to Alterware entrypoint..."
     exec "$SCRIPT_DIR/alterentry.sh"
     ;;
+  cod4x)
+    echo "CoD4x game detected. Handing off to CoD4x entrypoint..."
+    exec "$SCRIPT_DIR/cod4xentry.sh"
+    ;;
 esac

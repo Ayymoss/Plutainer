@@ -5,10 +5,15 @@
 # Fail"), which broke Debian/WineHQ-based builds — this base avoids that path.
 FROM archlinux:base
 
+# multilib supplies lib32-glibc/lib32-gcc-libs, needed by CoD4x: upstream's
+# dedicated server is a native 32-bit x86 Linux ELF, the one family here that
+# does not run under Wine.
+RUN printf '[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
+
 RUN pacman -Syu --noconfirm \
         wine \
-        xorg-server-xvfb \
-        xorg-xauth \
+        lib32-glibc \
+        lib32-gcc-libs \
         python \
         jq \
         wget \
@@ -23,20 +28,15 @@ RUN pacman -Syu --noconfirm \
 
 RUN useradd -m plutainer
 
-RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
-
-ENV WINEDLLOVERRIDES="mscoree,mshtml=" \
-    DISPLAY=:99
+ENV WINEDLLOVERRIDES="mscoree,mshtml="
 
 USER plutainer
 WORKDIR /home/plutainer/.plutainer
 
-RUN Xvfb :99 -screen 0 320x240x24 & \
-    sleep 1 && \
-    wineboot -u && \
-    wineserver -w && \
-    pkill -f Xvfb || true && \
-    rm -f /tmp/.X99-lock
+# No X server anywhere in the image: every server we run is headless. t7x needs
+# `-headless` for that (see alterentry.sh); wineboot only warns about the
+# missing display driver and still initialises the prefix.
+RUN wineboot -u && wineserver -w
 
 RUN wget https://github.com/mxve/plutonium-updater.rs/releases/latest/download/plutonium-updater-x86_64-unknown-linux-gnu.tar.gz -O plutonium-updater.tar.gz && \
     tar -xzvf plutonium-updater.tar.gz && \
@@ -59,57 +59,43 @@ RUN echo "upstream iw4x/launcher release: ${IW4X_LAUNCHER_REF}" && \
     rm -rf iw4x-launcher.tar.xz iw4x-launcher-extract && \
     chmod +x iw4x-launcher
 
-# Bundle community config seeds for first-run scaffolding. Entrypoint copies
-# these into the bind mount on start with cp -n (never overwrites user files).
-# Source repos: xerxes-at/T{4,5,6}ServerConfig*, xerxes-at/IW5ServerConfig,
-# Dss0/t7-server-config, iw4x/iw4-server-configs.
-# Disable per-stack via PLUTAINER_SKIP_SEED.
+# CoD4x server binary plus the two assets a stock CoD4 install lacks. The
+# server refuses to load any map without cod4x_patchv2.ff, and both it and
+# jcod4x_00.iwd ship in the *client* release rather than the server one — the
+# server release contains only the binaries and plugin zips. Nothing else from
+# the client is used: cod4x_021.dll, launcher.dll, core and mss are all
+# client-side. cod4x_ambfix.ff is skipped too; a running server references it
+# zero times.
+#
+# Both refs are pinned rather than tracking "latest": upstream's last server
+# release is 21.2 (2022) and the binary self-updates at runtime anyway, so a
+# moving target here would buy nothing and cost reproducibility.
+ARG COD4X_SERVER_REF=21.2
+ARG COD4X_CLIENT_REF=21.3
 RUN set -eux; \
-    mkdir -p seed-configs/{t4,t5,t6,iw5,t7x,iw4x}; \
-    cd /tmp; \
-    wget -q -O t4.zip   https://github.com/xerxes-at/T4ServerConfigs/archive/refs/heads/main.zip   && unzip -q t4.zip; \
-    wget -q -O t5.zip   https://github.com/xerxes-at/T5ServerConfig/archive/refs/heads/master.zip && unzip -q t5.zip; \
-    wget -q -O t6.zip   https://github.com/xerxes-at/T6ServerConfigs/archive/refs/heads/master.zip && unzip -q t6.zip; \
-    wget -q -O iw5.zip  https://github.com/xerxes-at/IW5ServerConfig/archive/refs/heads/master.zip && unzip -q iw5.zip; \
-    wget -q -O t7x.zip  https://github.com/Dss0/t7-server-config/archive/refs/heads/main.zip && unzip -q t7x.zip; \
-    wget -q -O iw4x.zip https://github.com/iw4x/iw4-server-configs/archive/refs/heads/main.zip && unzip -q iw4x.zip; \
-    cp -r T4ServerConfigs-main/main/.                              /home/plutainer/.plutainer/seed-configs/t4/; \
-    cp -r T5ServerConfig-master/localappdata/Plutonium/storage/t5/. /home/plutainer/.plutainer/seed-configs/t5/; \
-    cp -r T6ServerConfigs-master/localappdata/Plutonium/storage/t6/. /home/plutainer/.plutainer/seed-configs/t6/; \
-    cp -r IW5ServerConfig-master/admin/.                            /home/plutainer/.plutainer/seed-configs/iw5/; \
-    cp -r t7-server-config-main/zone /home/plutainer/.plutainer/seed-configs/t7x/; \
-    cp -r t7-server-config-main/t7x  /home/plutainer/.plutainer/seed-configs/t7x/; \
-    cp -r iw4-server-configs-main/userraw /home/plutainer/.plutainer/seed-configs/iw4x/; \
-    rm -rf /tmp/*.zip /tmp/T4ServerConfigs-main /tmp/T5ServerConfig-master /tmp/T6ServerConfigs-master /tmp/IW5ServerConfig-master /tmp/t7-server-config-main /tmp/iw4-server-configs-main; \
-    find /home/plutainer/.plutainer/seed-configs -type d -iname '*REFERENCE*' -exec rm -rf {} +; \
-    find /home/plutainer/.plutainer/seed-configs -type f \( -iname '*.bat' -o -iname '*.sh' -o -iname 'README*' \) -delete
+    mkdir -p cod4x/zone/english cod4x/main; \
+    SERVER_URL="https://github.com/callofduty4x/CoD4x_Server/releases/download/${COD4X_SERVER_REF}"; \
+    CLIENT_URL="https://github.com/callofduty4x/CoD4x_Client_pub/releases/download/${COD4X_CLIENT_REF}"; \
+    wget -q -O cod4x/cod4x18_dedrun "${SERVER_URL}/cod4x18_dedrun"; \
+    chmod +x cod4x/cod4x18_dedrun; \
+    wget -q -O cod4x/zone/english/cod4x_patchv2.ff "${CLIENT_URL}/cod4x_patchv2.ff"; \
+    wget -q -O cod4x/main/jcod4x_00.iwd "${CLIENT_URL}/jcod4x_00.iwd"
 
-# Every other seed here ships an active sv_maprotation, but iw4x's upstream
-# config leaves it commented out, so a first run would boot with +map_rotate
-# and nothing to load. Append the stock MW2 rotation to the rotation-driven
-# configs (partyserver*.cfg run lobby mode off playlists instead, so they are
-# deliberately left alone). Stock maps only — no DLC fastfile dependency.
-RUN set -eux; \
-    for f in server.cfg serverlan.cfg; do \
-      p="/home/plutainer/.plutainer/seed-configs/iw4x/userraw/$f"; \
-      if [ ! -f "$p" ]; then continue; fi; \
-      if grep -qE '^[[:space:]]*set[[:space:]]+sv_maprotation' "$p"; then continue; fi; \
-      { \
-        echo ''; \
-        echo '// ---------------------------------------------------------------'; \
-        echo '// Added by Plutainer: upstream ships sv_maprotation commented out,'; \
-        echo '// which leaves +map_rotate with nothing to load on a first run.'; \
-        echo '// Stock MW2 maps only, so this works without the DLC fastfiles.'; \
-        echo '// Edit freely, or set PLUTAINER_MAP_ROTATE=false to drive map'; \
-        echo '// selection from a playlist instead.'; \
-        echo '// ---------------------------------------------------------------'; \
-        echo 'set sv_maprotation "map mp_afghan map mp_rust map mp_terminal map mp_highrise map mp_favela map mp_quarry map mp_boneyard map mp_checkpoint map mp_subbase map mp_underpass map mp_derail map mp_estate map mp_invasion map mp_rundown map mp_brecourt map mp_nightshift"'; \
-      } >> "$p"; \
-    done
+# Community config seeds for first-run scaffolding. Entrypoint copies these
+# into the bind mount on start with cp -n (never overwrites user files).
+# Disable per-stack via PLUTAINER_SKIP_SEED.
+#
+# Vendored, not fetched: these used to be six build-time wgets of six
+# third-party repos, so any one of them disappearing broke the build for every
+# game, and since the RUN string never changed the layer cached forever —
+# upstream edits stayed invisible and no image could say which revision it
+# shipped. seed-configs/<game>/SOURCE records the exact upstream commit;
+# tools/refresh-seeds.sh is the only thing that should rewrite these.
+COPY --chown=plutainer:plutainer seed-configs/ seed-configs/
 
 COPY --chown=plutainer:plutainer scripts/ .
 RUN chmod +x entrypoint.sh healthcheck.sh plutoentry.sh iw4xentry.sh alterentry.sh \
-              log-watcher.sh rcon-cli game-config.sh migrate-v1-to-v2.sh
+              cod4xentry.sh log-watcher.sh rcon-cli game-config.sh migrate-v1-to-v2.sh
 
 USER root
 RUN ln -s /home/plutainer/.plutainer/rcon-cli /usr/local/bin/rcon-cli
