@@ -12,7 +12,7 @@ What each game needs from you, and what Plutainer supplies. Find your game, chec
 | Modern Warfare 3 | `iw5mp` | yes | 27016 | `server.cfg` |
 | Modern Warfare 2 | `iw4x` | no | 28960 | `server.cfg`, `serverlan.cfg`, `partyserver.cfg`, `partyserverlan.cfg` |
 | Black Ops III | `t7x` | no | 27017 | `server.cfg`, `server_zm.cfg`, `server_cp.cfg` |
-| Modern Warfare | `cod4x` | no | 28960 | `server.cfg` |
+| Modern Warfare | `cod4x` | token, to be listed | 28960 | `server.cfg` |
 
 `PLUTAINER_CONFIG_FILE` must name one of the seeded files, or a config you place in `app/configs/` yourself. Get it wrong and the container refuses to start with a hint listing what it found — including case-only mismatches like `Server.cfg` vs `server.cfg`.
 
@@ -71,7 +71,15 @@ Launches with `-headless`, which is what removes the need for a virtual display 
 
 Multiplayer only. This is the one family that does **not** run under Wine: upstream ships a native Linux server, and Plutainer runs it directly.
 
-Without an auth token the server runs fine but stays unlisted on the master, logging `Server needs to provide a valid token in cvar sv_authtoken`. That's expected. Set `PLUTAINER_COD4X_AUTH_TOKEN` to be listed.
+**A public server needs a masterserver token.** It isn't a Plutonium-style key — the server starts and plays without one — but without it CoD4x cannot register with the master:
+
+```
+Can not register server on the masterserver. Server needs to provide a valid token in cvar sv_authtoken.
+```
+
+An unregistered server **never appears in the in-game server browser**, so in practice nobody finds it; only players you give the address to can connect directly. Host migration also requires one.
+
+Get a token from <http://cod4master.cod4x.ovh> and pass it as `PLUTAINER_COD4X_AUTH_TOKEN`. The engine expects exactly **32 characters**. With no token set, Plutainer passes `sv_authorizemode -1` so the server still runs rather than refusing to start.
 
 **RCON passwords must be at least 8 characters.** Shorter ones are refused with `No rconpassword set on server or password is shorter than 8 characters`, which reads like a wrong password rather than a too-short one.
 

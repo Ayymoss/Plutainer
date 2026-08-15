@@ -31,7 +31,7 @@ services:
 | Modern Warfare 3 (IW5) | `iw5mp` | Plutonium. Needs a server key |
 | Modern Warfare 2 (IW4x) | `iw4x` | No key. amd64 only |
 | Black Ops III (T7x) | `t7x` | Alterware. No key |
-| Modern Warfare (CoD4x) | `cod4x` | No key. Multiplayer only, amd64 only |
+| Modern Warfare (CoD4x) | `cod4x` | Multiplayer only, amd64 only. Needs a [masterserver token](docs/games.md#cod4x-modern-warfare) to appear in the server browser |
 
 Image: `ghcr.io/ayymoss/plutainer:latest` — multi-arch (amd64 + arm64), with [two exceptions](docs/games.md#architecture-support).
 

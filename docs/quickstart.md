@@ -8,7 +8,10 @@ You need three things:
 
 1. **Docker and Docker Compose** on a Linux host.
 2. **The base game files**, which you must own. Plutainer ships no game content. What exactly each game needs is in [Games](games.md).
-3. **A Plutonium server key** — only for T4, T5, T6 and IW5. Free from <https://platform.plutonium.pw/serverkeys>. IW4x, T7x and CoD4x need nothing.
+3. **A server key or token**, depending on the game:
+   - **T4, T5, T6, IW5** need a Plutonium server key, free from <https://platform.plutonium.pw/serverkeys>. The server will not start without one.
+   - **CoD4x** needs a masterserver token from <http://cod4master.cod4x.ovh> to be listed in the server browser. It runs without one, but nobody will find it.
+   - **IW4x and T7x** need nothing.
 
 ## 1. Put the game files somewhere
 

@@ -64,7 +64,7 @@ Older CoD4x volumes shipped `my_connect_password` from upstream. Seeds never ove
 
 ### The server doesn't appear in the server list
 
-- **CoD4x**: `Server needs to provide a valid token in cvar sv_authtoken` — expected without `PLUTAINER_COD4X_AUTH_TOKEN`. The server is playable, just unlisted.
+- **CoD4x**: `Server needs to provide a valid token in cvar sv_authtoken` — you have no masterserver token, so the server never registers and will not show up in the browser at all. Players can still connect directly by address. Get a 32-character token from <http://cod4master.cod4x.ovh> and set `PLUTAINER_COD4X_AUTH_TOKEN`.
 - **Plutonium**: `Could not send heartbeat to nix! … 401` means the key was rejected. Playable locally, not listed.
 
 ### `steam_api.so not found` (CoD4x)

@@ -41,7 +41,7 @@ These only apply to one engine family.
 | `PLUTO_SERVER_KEY` | **Required.** Key from <https://platform.plutonium.pw/serverkeys> | Plutonium |
 | `PLUTO_MAX_CLIENTS` | Maximum players (other games set this in the cfg) | Plutonium T5 |
 | `IW4X_NET_LOG_IP` | `IP:port` for remote netlogging (`g_log_add`) | IW4x |
-| `PLUTAINER_COD4X_AUTH_TOKEN` | Masterserver token. Without one the server runs but stays unlisted | CoD4x |
+| `PLUTAINER_COD4X_AUTH_TOKEN` | Masterserver token, 32 characters, from <http://cod4master.cod4x.ovh>. Without one the server runs but is never listed in the server browser | CoD4x |
 | `PLUTAINER_COD4X_AUTHORIZE_MODE` | `sv_authorizemode` used when no token is set (default `-1`) | CoD4x |
 | `PLUTAINER_DEDICATED` | `dedicated` value: `2` public, `1` LAN (default `2`) | CoD4x |
 | `PLUTAINER_RCON_WHITELIST` | Extra addresses allowed to send RCON, comma separated. See [IW4MAdmin](iw4madmin.md) | T5, T6 |

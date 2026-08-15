@@ -155,7 +155,8 @@ services:
       # PLUTAINER_MOD: "2833912385"
 
   # -------------------------------------------------------------------- CoD4x
-  # Modern Warfare. No server key, multiplayer only, amd64 only.
+  # Modern Warfare. Multiplayer only, amd64 only. No Plutonium-style key, but
+  # a masterserver token is what gets you into the server browser (below).
   # The gamefiles mount needs only main/ and zone/.
   cod4x-1:
     image: ghcr.io/ayymoss/plutainer:latest
@@ -169,5 +170,7 @@ services:
       PLUTAINER_GAME: cod4x
       PLUTAINER_CONFIG_FILE: server.cfg
       PLUTAINER_PORT: "28965"
-      # Optional: without a token the server runs but stays unlisted.
+      # Needed to appear in the server browser. The server runs without it,
+      # but never registers with the master, so nobody finds it.
+      # 32-character token from http://cod4master.cod4x.ovh
       # PLUTAINER_COD4X_AUTH_TOKEN: ${COD4X_TOKEN}
