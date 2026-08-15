@@ -52,7 +52,7 @@ fi
 
 # --- Detect game type from PLUTAINER_GAME ---
 if ! detect_game_type; then
-  hold_indefinitely "Set PLUTAINER_GAME to one of: t4mp, t4sp, t5mp, t5sp, t6mp, t6zm, iw5mp, iw4x, t7x"
+  hold_indefinitely "Set PLUTAINER_GAME to one of: t4mp, t4sp, t5mp, t5sp, t6mp, t6zm, iw5mp, iw4x, t7x, cod4x, 7dtd"
 fi
 
 # --- Dispatch to game-specific entrypoint ---
@@ -72,5 +72,9 @@ case "$GAME_TYPE" in
   cod4x)
     echo "CoD4x game detected. Handing off to CoD4x entrypoint..."
     exec "$SCRIPT_DIR/cod4xentry.sh"
+    ;;
+  7dtd)
+    echo "7 Days to Die detected. Handing off to the native Linux entrypoint..."
+    exec "$SCRIPT_DIR/7dtdentry.sh"
     ;;
 esac

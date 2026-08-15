@@ -6,8 +6,8 @@ Every setting is an environment variable. Only two are required.
 
 | Variable | Description |
 | --- | --- |
-| `PLUTAINER_GAME` | Which game — `t4mp`, `t4sp`, `t5mp`, `t5sp`, `t6mp`, `t6zm`, `iw5mp`, `iw4x`, `t7x`, `cod4x` |
-| `PLUTAINER_CONFIG_FILE` | Which config to run, e.g. `dedicated_zm.cfg`. Must exist in `app/configs/` — Plutainer seeds one on first start ([names per game](games.md)) |
+| `PLUTAINER_GAME` | Which game — `t4mp`, `t4sp`, `t5mp`, `t5sp`, `t6mp`, `t6zm`, `iw5mp`, `iw4x`, `t7x`, `cod4x`, `7dtd` |
+| `PLUTAINER_CONFIG_FILE` | Which config to run, e.g. `dedicated_zm.cfg`. Must exist in `app/configs/` — Plutainer seeds one on first start ([names per game](games.md)). Optional for 7DTD, where it defaults to `serverconfig.xml` |
 
 Plutonium games (`t4*`, `t5*`, `t6*`, `iw5mp`) also require `PLUTO_SERVER_KEY`.
 
@@ -17,7 +17,7 @@ Plutonium games (`t4*`, `t5*`, `t6*`, `iw5mp`) also require `PLUTO_SERVER_KEY`.
 | --- | --- | --- |
 | `PLUTAINER_PORT` | Network port | [per game](games.md) |
 | `PLUTAINER_RCON_PASSWORD` | Sets `rcon_password` in your config at startup. Opt-in — unset leaves your config untouched | unset |
-| `PLUTAINER_SERVER_NAME` | Name shown in Plutainer's own startup logs (not the in-game hostname — that's `sv_hostname` in your cfg) | per family |
+| `PLUTAINER_SERVER_NAME` | Name shown in Plutainer's startup logs. For 7DTD this also sets XML `ServerName`; CoD engines still use `sv_hostname` in their cfg | per family |
 | `PLUTAINER_MOD` | Mod folder name. On T7x, a Steam Workshop ID instead | unset |
 | `PLUTAINER_MAP_ROTATE` | `false` drops the automatic `+map_rotate` (`+start_map_rotate` on IW5), leaving map choice to your cfg or playlist. N/A on T7x | `true` |
 | `PLUTAINER_EXTRA_ARGS` | Extra arguments appended to the launch command | unset |
@@ -46,6 +46,7 @@ These only apply to one engine family.
 | `PLUTAINER_DEDICATED` | `dedicated` value: `2` public, `1` LAN (default `2`) | CoD4x |
 | `PLUTAINER_RCON_WHITELIST` | Extra addresses allowed to send RCON, comma separated. See [IW4MAdmin](iw4madmin.md) | T5, T6 |
 | `PLUTAINER_RCON_WHITELIST_GATEWAY` | `false` stops auto-whitelisting the Docker gateway (default `true`) | T5, T6 |
+| `PLUTAINER_7DTD_BETA` | Optional Steam beta branch, for example `latest_experimental` | 7 Days to Die |
 
 ## Ports
 
@@ -55,6 +56,7 @@ These only apply to one engine family.
 | t6 | 4976 |
 | iw5 | 27016 |
 | t7x | 27017 |
+| 7dtd | 26900 |
 
 Publish as **UDP**. IW4x additionally wants TCP published if you host mods, for modlist metadata:
 
@@ -62,6 +64,14 @@ Publish as **UDP**. IW4x additionally wants TCP published if you host mods, for 
 ports:
   - "28960:28960/udp"
   - "28960:28960/tcp"   # IW4x mod hosting only
+```
+
+7DTD uses TCP and UDP on its base port plus the next three UDP ports. With the default:
+
+```yaml
+ports:
+  - "26900:26900/tcp"
+  - "26900-26903:26900-26903/udp"
 ```
 
 ## Legacy variables

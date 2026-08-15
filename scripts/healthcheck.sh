@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Liveness check: ask the server for its status over the Quake3 UDP protocol
-# and require it to name a loaded map.
+# Liveness check. Call of Duty servers use the Quake3 UDP status protocol;
+# 7 Days to Die uses a process plus TCP-listener check.
 #
 # Uses the unauthenticated `getstatus` query rather than RCON `status`. Both are
 # handled by the same connectionless-packet path inside the same server frame
@@ -27,6 +27,53 @@ echo "       - ${GAME_TYPE} server detected (${GAME_NAME})."
 if [[ "${HEALTHCHECK_FLAG}" == "false" ]]; then
   echo "[INFO] Health check is disabled by environment variable."
   exit 0
+fi
+
+# 7DTD is not a Quake-derived engine and does not answer getstatus/getinfo.
+# Its game port has a TCP listener, so require both the dedicated process and
+# a successful loopback connection. This catches a dead process and a server
+# that is still starting or has failed before binding its game socket.
+if [[ "$GAME_TYPE" == "7dtd" ]]; then
+  HEALTHCHECK_PORT=${CUSTOM_PORT}
+  if [[ -z "$HEALTHCHECK_PORT" ]]; then
+    config_path="$PLUTAINER_CONFIGS_DIR/${PLUTAINER_CONFIG_FILE:-serverconfig.xml}"
+    if [[ -f "$config_path" ]]; then
+      HEALTHCHECK_PORT=$(python3 - "$config_path" <<'PY'
+import re
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    text = fh.read()
+match = re.search(
+    r'<property\s+name=["\']ServerPort["\']\s+value=["\'](\d+)["\']',
+    text,
+    re.IGNORECASE,
+)
+print(match.group(1) if match else "")
+PY
+      )
+    fi
+    if [[ -z "$HEALTHCHECK_PORT" ]]; then
+      resolve_default_port || exit 1
+      HEALTHCHECK_PORT="$DEFAULT_PORT"
+    fi
+  fi
+
+  pgrep -f '[/]7DaysToDieServer.x86_64' >/dev/null || {
+    echo "[ERROR] 7 Days to Die server process is not running." >&2
+    exit 1
+  }
+
+  python3 - "$HEALTHCHECK_PORT" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+with socket.create_connection(("127.0.0.1", port), timeout=5):
+    pass
+print(f"[OK] 7 Days to Die is accepting TCP connections on port {port}.")
+PY
+  exit $?
 fi
 
 # --- Step 3: Determine the correct port to check ---

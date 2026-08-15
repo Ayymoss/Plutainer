@@ -67,6 +67,8 @@ amd64 is required. **arm64 is best-effort** (`optional: true` + `continue-on-err
 
 **cod4x is amd64-only by nature**, not by build failure: upstream's native Linux server is a 32-bit x86 ELF, which cannot execute on arm64 at all. `cod4xentry.sh` refuses with an explanation.
 
+**7dtd is amd64-only**: SteamCMD installs the official x86_64 native Linux server. The arm64 image includes the dispatcher script so it can refuse clearly, but does not include SteamCMD or Linux-user-space x86 emulation.
+
 **Degradation.** `Dockerfile.arm64` lets the launcher build fail, writing the `.unavailable` marker in its place. Stage 3 copies `/out/` as a **directory**, not a file — a file `COPY` of a missing path aborts the build, which is the coupling being avoided; the marker also keeps the directory non-empty. `iw4xentry.sh` tests `-x` on the binary and `hold_indefinitely`s if absent. That is a capability check, not an arch check, so iw4x starts working again as soon as an image ships a binary, with no code change.
 
 **`IW4X_LAUNCHER_REF` is load-bearing — do not remove it.** Both Dockerfiles fetch the launcher inside a `RUN`, so the layer cache key never changes on its own and upstream changes stay invisible until eviction. CI resolves the upstream ref (release tag for amd64, commit SHA for arm64) and passes it purely to key the cache. This matters most on arm64, where the `|| { … }` fallback makes the step exit 0 on failure, so a failed build caches as a success and would keep shipping the marker indefinitely.
@@ -125,11 +127,13 @@ Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All e
 
    Without `PLUTAINER_COD4X_AUTH_TOKEN` the launch passes `sv_authorizemode -1`; the server runs and is fully playable, just unlisted on the master.
 
-6. **`game-config.sh`** — Shared shell library sourced by all other scripts. Key helpers:
+6. **`7dtdentry.sh`** — Native Linux 7 Days to Die entrypoint. SteamCMD anonymously installs app 294420 into `app/runtime/7dtd/`; persistent worlds and logs live in `app/runtime/7dtd-data/`. The current depot's XML template is copied once to `app/configs/serverconfig.xml`, and `PLUTAINER_PORT` updates only its `ServerPort` value. No gamefiles mount or Wine is involved.
+
+7. **`game-config.sh`** — Shared shell library sourced by all other scripts. Key helpers:
    - Volume path constants: `PLUTAINER_APP_DIR`, `PLUTAINER_CONFIGS_DIR`, `PLUTAINER_RUNTIME_DIR`, `PLUTAINER_GAMEFILES_DIR`, `PLUTAINER_PLUTONIUM_DIR`, `PLUTAINER_SOURCE_DIR`.
    - `hold_indefinitely <msg>`: print the error, then `exec sleep infinity` so the container stays `Up` instead of looping through restarts. Used for any startup validation failure.
    - `launch_game <cmd>...`: wraps the game invocation; on exit, sleeps 30s before letting the script exit, so docker's restart policy throttles to ~1 restart per 30s.
-   - `derive_family <game-tag>`: returns `plutonium`/`iw4x`/`alterware`.
+   - `derive_family <game-tag>`: returns `plutonium`/`iw4x`/`alterware`/`cod4x`/`7dtd`.
    - `detect_game_type`: validates `PLUTAINER_GAME` (no shim — only PLUTAINER_* accepted), sets `GAME_TYPE`/`GAME_NAME`/`BASE_GAME`/`CONFIG_FILE`/`CUSTOM_PORT`/`HEALTHCHECK_FLAG`.
    - `resolve_default_port`, `resolve_engine_config_dir`, `resolve_mod_config_dir`.
    - `resolve_config_layout`: sets `CONFIG_SOT_DIR` and `ALT_CONFIG_DIR` based on `PLUTAINER_USE_RAW_CONFIGS`. Default: SOT = `configs/`, ALT = engine dir. With raw mode on: swapped.
@@ -192,7 +196,7 @@ Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All e
 
 For Plutonium, `BASE_GAME` is derived by stripping the last two chars from `PLUTAINER_GAME` (e.g., `t6zm` → `t6`). This drives:
 
-- **Default ports**: iw4x→28960, iw5→27016, t4/t5→28960, t6→4976, t7x→27017.
+- **Default ports**: iw4x→28960, iw5→27016, t4/t5→28960, t6→4976, t7x→27017, 7dtd→26900.
 - **Engine config dirs** (where the game reads `+exec`'d cfg files): t4 → `runtime/gamefiles/main/`, iw5 → `runtime/gamefiles/admin/`, iw4x → `runtime/gamefiles/userraw/`, t7x → `runtime/gamefiles/zone/`, others → `runtime/plutonium/storage/<base_game>/`.
 - **Command args**: iw5 uses `+set sv_config` and `+start_map_rotate`; others use `+exec` and `+map_rotate`. The map-rotate arg is opt-out family-wide via `PLUTAINER_MAP_ROTATE=false` (Plutonium + IW4x; T7x never had one).
 - **Game-file symlinks** differ per base game (see `plutoentry.sh` case statement).
@@ -210,4 +214,4 @@ Two distinct failure modes:
 - **Configuration errors** (validation failures, missing env vars, missing config file, v1 volume, unknown game): `hold_indefinitely` → `exec sleep infinity`. Container stays `Up`; healthcheck eventually marks it unhealthy. No restart loop. User fixes and runs `docker restart <name>`.
 - **Runtime crashes** (wine exits): `launch_game` wrapper catches the exit, sleeps 30s, then exits with the original return code. Docker's restart policy fires after that, giving ~1 restart per 30s instead of immediate churn.
 
-`STOPSIGNAL` is `SIGKILL`, so neither path interferes with `docker stop` — that's instant by design.
+`STOPSIGNAL` is `SIGTERM`. `launch_game` traps it and preserves immediate-stop behaviour for the CoD families. The 7DTD entrypoint supplies `graceful_shutdown_game`, which forwards SIGTERM to the native server and lets its `ServerShutdown` path save before exiting; Docker's configured stop timeout remains the hard upper bound.

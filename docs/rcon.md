@@ -1,5 +1,7 @@
 # RCON
 
+This page applies to the Call of Duty engines. 7 Days to Die uses its own telnet/web administration configured in `serverconfig.xml`; Plutainer's `rcon-cli` does not support it.
+
 Sending commands to a running server.
 
 ## Set a password first
