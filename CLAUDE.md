@@ -4,7 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Plutainer is a Docker image for running Plutonium, IW4x, and Alterware dedicated game servers (Call of Duty titles: T4/WaW, T5/BO1, T6/BO2, IW5/MW3, IW4x/MW2, T7x/BO3). It uses Wine on Arch Linux to run the Windows game server binaries, configured entirely via environment variables.
+Plutainer is a Docker image for running Plutonium, IW4x, Alterware and CoD4x dedicated game servers (Call of Duty titles: T4/WaW, T5/BO1, T6/BO2, IW5/MW3, IW4x/MW2, T7x/BO3, CoD4x/CoD4). It uses Wine on Arch Linux to run the Windows game server binaries, configured entirely via environment variables. CoD4x is the exception: upstream ships a native Linux server, so it runs directly with no Wine (and is therefore amd64-only — the binary is 32-bit x86).
+
+## Documentation layout
+
+User-facing docs are split by concern; `README.md` is a landing page and should stay short. Put new material in the page that owns the topic rather than growing the README:
+
+| File | Owns |
+| --- | --- |
+| `README.md` | What Plutainer is, supported games, links out |
+| `docs/quickstart.md` | First server, start to finish |
+| `docs/games.md` | Per-game: required game files, keys, config names, ports, quirks, arch support, bundled configs |
+| `docs/configuration.md` | Environment variable reference |
+| `docs/volumes-and-configs.md` | Volume layout, config symlink flow, raw mode, logs, permissions |
+| `docs/rcon.md` | Passwords, `rcon-cli`, who may send RCON |
+| `docs/iw4madmin.md` | Sidecar setup, parser table, the T5/T6 whitelist explanation |
+| `docs/healthcheck.md` | What healthy means, restart behaviour, autoheal |
+| `docs/troubleshooting.md` | Symptom-first FAQ |
+| `examples/*.yml` | Copy-paste compose files |
+| `MIGRATION.md` | v1 → v2 |
+
+`docs/` and `examples/` are excluded from the build context in `.dockerignore`.
 
 ## Build & Test
 
@@ -45,11 +65,13 @@ amd64 is required. **arm64 is best-effort** (`optional: true` + `continue-on-err
 
 **Current state: iw4x does not work on arm64.** The source build fails and the image ships `/home/plutainer/.plutainer/iw4x-launcher.unavailable` instead of the binary. Plutonium (t4/t5/t6/iw5) and Alterware (t7x) are unaffected on both architectures. Background: iw4x/launcher#76.
 
+**cod4x is amd64-only by nature**, not by build failure: upstream's native Linux server is a 32-bit x86 ELF, which cannot execute on arm64 at all. `cod4xentry.sh` refuses with an explanation.
+
 **Degradation.** `Dockerfile.arm64` lets the launcher build fail, writing the `.unavailable` marker in its place. Stage 3 copies `/out/` as a **directory**, not a file — a file `COPY` of a missing path aborts the build, which is the coupling being avoided; the marker also keeps the directory non-empty. `iw4xentry.sh` tests `-x` on the binary and `hold_indefinitely`s if absent. That is a capability check, not an arch check, so iw4x starts working again as soon as an image ships a binary, with no code change.
 
 **`IW4X_LAUNCHER_REF` is load-bearing — do not remove it.** Both Dockerfiles fetch the launcher inside a `RUN`, so the layer cache key never changes on its own and upstream changes stay invisible until eviction. CI resolves the upstream ref (release tag for amd64, commit SHA for arm64) and passes it purely to key the cache. This matters most on arm64, where the `|| { … }` fallback makes the step exit 0 on failure, so a failed build caches as a success and would keep shipping the marker indefinitely.
 
-**Both Dockerfiles carry their own seed-configs block — keep them in sync.**
+**Both Dockerfiles carry their own seed-configs block — keep them in sync.** Both are now a single `COPY seed-configs/`; the files are vendored (see below), not fetched at build time.
 
 ## Architecture
 
@@ -57,9 +79,19 @@ Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All e
 
 1. **`entrypoint.sh`** — Top-level dispatcher. Sources `game-config.sh`, calls `detect_game_type` (requires `PLUTAINER_GAME`), `check_volume_version` (refuses v1 volumes), then `exec`s the family-specific entry script. On any failure: `hold_indefinitely` (sleep infinity) instead of exiting, to avoid restart loops.
 
+   **T5/T6 gate unauthenticated queries on the RCON whitelist — this is what makes or breaks IW4MAdmin.** IW4MAdmin's T5/T6 parsers open with `getinfo` (unlike its BOIII, T4 CO-OP/ZM and TeknoMW3 parsers, which set `RConGetInfo = null`). On T5/T6, `getinfo`/`getstatus` are refused off-loopback unless the sender is whitelisted, and an *empty* whitelist does **not** mean "everyone" for those queries, though it does for RCON commands. Measured on T6 zombies, off-loopback:
+
+   | whitelist state | RCON | `getinfo` |
+   | --- | --- | --- |
+   | upstream placeholder IPs | blocked | blocked |
+   | empty | works | blocked |
+   | gateway whitelisted | works | works |
+
+   So a sidecar admin tool completes the RCON handshake (`rcon <pw> version`, `sv_running` both answer) and then fails on repeated unanswered `getinfo`, aborting startup. The sender's address is this container's *bridge gateway*, which Docker assigns at run time, so it cannot be baked into a config file — `resolve_rcon_whitelist_args` detects it and appends `+rconWhitelistAdd`. T4 and IW5 answer queries regardless and are deliberately skipped, since adding an entry would newly restrict their RCON for no gain; iw4x and t7x have no such command.
+
 2. **`plutoentry.sh`** — Plutonium server entrypoint. Symlinks game files from the read-only gamefiles mount, runs `plutonium-updater`, seeds bundled configs into the SOT location, fans out symlinks from `app/configs/` to the engine and (if `PLUTAINER_MOD` is set) the mod config dir, calls `ensure_config_present` (auto-lift + refusal), then `launch_game wine ...` (30s exit-throttle wrapper).
 
-3. **`iw4xentry.sh`** — IW4x server entrypoint. Same shape: symlinks game files, runs `iw4x-launcher`, seeds bundled configs, fans out config symlinks (engine + optional mod dir), validates, `launch_game wine iw4x.exe`. Seed bundle is `iw4x/iw4-server-configs` with `cfg_root_rel="userraw"`, so its top-level `userraw/*.cfg` lift into `configs/` and the playlist `*.info` files stay under `runtime/gamefiles/userraw/`. The Dockerfile appends a stock-MW2 `sv_maprotation` to the seed's `server.cfg`/`serverlan.cfg` — upstream ships it commented out, unlike every other seed here, which would leave `+map_rotate` with nothing to load on a first run.
+3. **`iw4xentry.sh`** — IW4x server entrypoint. Same shape: symlinks game files, runs `iw4x-launcher`, seeds bundled configs, fans out config symlinks (engine + optional mod dir), validates, `launch_game wine iw4x.exe`. Seed bundle is `iw4x/iw4-server-configs` with `cfg_root_rel="userraw"`, so its top-level `userraw/*.cfg` lift into `configs/` and the playlist `*.info` files stay under `runtime/gamefiles/userraw/`. `tools/refresh-seeds.sh` appends a stock-MW2 `sv_maprotation` to the seed's `server.cfg` — upstream ships it commented out there, unlike every other seed here, which would leave `+map_rotate` with nothing to load on a first run. (`serverlan.cfg` already carries an active one upstream, and the guard skips it; `partyserver*.cfg` run lobby mode off playlists and are left alone.) The append is committed into the vendored file, so what ships is what is in the repo.
 
    **The launcher has no `--path` flag.** It canonicalises `/proc/self/exe` and uses its own directory as the installation root, ignoring cwd. The entrypoint therefore `cp`s the binary into `runtime/gamefiles/` and runs it from there, putting the install root inside the volume. It must be a real copy — `canonical()` resolves a symlink back to `.plutainer/`, an image layer, and the ~800MB it fetches would be re-downloaded on every container recreate.
 
@@ -77,9 +109,23 @@ Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All e
 
    A launcher failure is fatal only on first run (no `iw4x.exe` yet); otherwise it warns and starts the existing install.
 
-4. **`alterentry.sh`** — Alterware (T7x/BO3) entrypoint. Symlinks game files, uses `wget -N` (timestamping) to fetch `t7x.exe` only when upstream is newer, seeds Dss0/t7-server-config bundle, fans out config symlinks, starts `Xvfb` (T7x requires a display), `launch_game wine t7x.exe`. No mod dir (alterware MOD is a Steam Workshop ID).
+4. **`alterentry.sh`** — Alterware (T7x/BO3) entrypoint. Symlinks game files, uses `wget -N` (timestamping) to fetch `t7x.exe` only when upstream is newer, seeds Dss0/t7-server-config bundle, fans out config symlinks, `launch_game wine t7x.exe -headless -dedicated ...`. No mod dir (alterware MOD is a Steam Workshop ID).
 
-5. **`game-config.sh`** — Shared shell library sourced by all other scripts. Key helpers:
+   **`-headless` is what removes the X dependency — do not drop it.** t7x's `console` component calls `Sys_CreateConsole` and builds a real Win32 console *window* unless `game::is_headless()`; with `-headless` it attaches to the parent console and `fputs`es to stdout instead. Without it, under Wine with no display, the process hangs at `err:winediag:nodrv_CreateWindow` and never binds its port. The image ships no X server at all now; the flag is the only thing standing in for one. `-dedicated` is separate and still required (it forces `is_server` rather than relying on the "server exe present, client exe absent" fallback).
+
+5. **`cod4xentry.sh`** — CoD4x (Call of Duty 4) entrypoint. MP only. Same shape as the rest: mirrors `main/` and `zone/english/` from the read-only mount, stages the server binary and CoD4x assets, seeds configs, fans out config symlinks, validates, `launch_game ./cod4x18_dedrun`.
+
+   **The only family that does not use Wine.** Upstream publishes a native Linux dedicated server, `cod4x18_dedrun`, and it is a plain console app — no window, so no display either. The Windows build was tested and dies at `nodrv_CreateWindow` exactly as T7x does without `-headless`, which would have meant reintroducing Xvfb. The native binary was the risk to check instead: it is a 32-bit x86 ELF, and 32-bit Linux socket code is what Docker's seccomp blocks via `socketcall(2)` — the very reason this image sits on an Arch pure-WoW64 base. Measured: it opens its UDP and TCP sockets fine. Cost is `lib32-glibc` + `lib32-gcc-libs` from multilib.
+
+   **Therefore CoD4x is amd64-only** — a 32-bit x86 ELF cannot run on arm64 at all. The entrypoint checks for the binary and `hold_indefinitely`s with an explanation, the same capability-check (not arch-check) pattern `iw4xentry.sh` uses.
+
+   The binary is **copied** into the volume, not symlinked: CoD4x self-updates in place, which would fail against a read-only image layer, and a copy means an updated build survives container recreation. Same reasoning as the IW4x launcher, different cause.
+
+   **Two assets come from the *client* release, and are not optional.** The server release ships only binaries and plugin zips; the server refuses to load any map without `zone/english/cod4x_patchv2.ff`, which upstream publishes under `CoD4x_Client_pub`. `jcod4x_00.iwd` is referenced too. Nothing else from the client is used — `cod4x_021.dll`, `launcher.dll`, `core` and `mss` are client-side, and `cod4x_ambfix.ff` is referenced zero times by a running server. Both refs are pinned (`COD4X_SERVER_REF`, `COD4X_CLIENT_REF`) rather than tracking latest: the last server release is 2022 and the binary self-updates anyway.
+
+   Without `PLUTAINER_COD4X_AUTH_TOKEN` the launch passes `sv_authorizemode -1`; the server runs and is fully playable, just unlisted on the master.
+
+6. **`game-config.sh`** — Shared shell library sourced by all other scripts. Key helpers:
    - Volume path constants: `PLUTAINER_APP_DIR`, `PLUTAINER_CONFIGS_DIR`, `PLUTAINER_RUNTIME_DIR`, `PLUTAINER_GAMEFILES_DIR`, `PLUTAINER_PLUTONIUM_DIR`, `PLUTAINER_SOURCE_DIR`.
    - `hold_indefinitely <msg>`: print the error, then `exec sleep infinity` so the container stays `Up` instead of looping through restarts. Used for any startup validation failure.
    - `launch_game <cmd>...`: wraps the game invocation; on exit, sleeps 30s before letting the script exit, so docker's restart policy throttles to ~1 restart per 30s.
@@ -94,17 +140,33 @@ Everything runs as the `plutainer` user from `/home/plutainer/.plutainer`. All e
    - `link_configs <engine-dir1> [engine-dir2 ...]`: variadic. Fans out symlinks from every `configs/*.cfg` into each engine dir using relative paths. Refuses to overwrite a real (non-symlink) file at engine path (warns instead). Reaps dangling cfg symlinks. No-op when `PLUTAINER_USE_RAW_CONFIGS=true`.
    - `ensure_config_present`: checks that `CONFIG_FILE` exists at `CONFIG_SOT_DIR`. If absent there but present as a real file at the ALT location, moves it (auto-lift). If absent everywhere, prints a refusal with a `find -iname` case-insensitive hint, returns non-zero.
    - `check_volume_version`: refuses v1 volumes with explicit migration instructions; initialises fresh volumes; writes `.plutainer-version=2`.
+   - `resolve_rcon_whitelist_args`: builds `+rconWhitelistAdd <ip>` launch args (into `RCON_WHITELIST_ARGS`) from the container's detected default gateway plus `PLUTAINER_RCON_WHITELIST`. **T5/T6 only** — see the IW4MAdmin note under `plutoentry.sh`. Disable the gateway entry with `PLUTAINER_RCON_WHITELIST_GATEWAY=false`.
+   - `apply_rcon_password`: writes `PLUTAINER_RCON_PASSWORD` into `CONFIG_SOT_DIR/CONFIG_FILE`. **Opt-in and never destructive** — unset or empty is a no-op, so it can't null out a password the user set by hand. Rewrites the value on an existing `rcon_password` line (keeping its trailing `//` comment) or appends one. Uses python3, not sed: the value is arbitrary user input that would otherwise need escaping against sed's replacement metacharacters. There is deliberately **no default value** — a shipped placeholder would be a known credential on a port anyone can find by scanning for `getstatus` responders. Called by all three entrypoints after `ensure_config_present`.
    - `extract_rcon_password`: parses `rcon_password` from `CONFIG_PATH`. Handles double-quoted, single-quoted, and unquoted values. Strips `//` comments. On failure, prints a structured `[WARN]` (don't block startup) telling the user the accepted forms and not to set the password via `PLUTAINER_EXTRA_ARGS`.
 
-6. **`migrate-v1-to-v2.sh`** — One-shot migration tool, run via `docker run --entrypoint`. Moves `app/gamefiles` → `app/runtime/gamefiles`, `app/plutonium` → `app/runtime/plutonium`, lifts top-level cfg files from known engine config dirs into `app/configs/` and replaces them with relative symlinks, clears stale `app/logs/` entries, writes `.plutainer-version=2`. Supports `--dry-run`.
+7. **`migrate-v1-to-v2.sh`** — One-shot migration tool, run via `docker run --entrypoint`. Moves `app/gamefiles` → `app/runtime/gamefiles`, `app/plutonium` → `app/runtime/plutonium`, lifts top-level cfg files from known engine config dirs into `app/configs/` and replaces them with relative symlinks, clears stale `app/logs/` entries, writes `.plutainer-version=2`. Supports `--dry-run`.
 
-7. **`log-watcher.sh`** — Background poller started by each entrypoint before `exec wine`. Discovers every `*.log` under `/home/plutainer/app/` (excluding `app/logs/` itself to avoid cycles) and maintains relative symlinks at `/home/plutainer/app/logs/<basename>` pointing at the active one. Active = newest mtime >= container boot time. Agnostic to log name. Symlinks are relative so they resolve the same on host, in this container, or in a sidecar IW4MAdmin container. Disable with `PLUTAINER_LOG_SYMLINKS=false`; poll interval via `PLUTAINER_LOG_POLL_INTERVAL` (default 2s).
+8. **`log-watcher.sh`** — Background poller started by each entrypoint before `exec wine`. Discovers every `*.log` under `/home/plutainer/app/` (excluding `app/logs/` itself to avoid cycles) and maintains relative symlinks at `/home/plutainer/app/logs/<basename>` pointing at the active one. Active = newest mtime >= container boot time. Agnostic to log name. Symlinks are relative so they resolve the same on host, in this container, or in a sidecar IW4MAdmin container. Disable with `PLUTAINER_LOG_SYMLINKS=false`; poll interval via `PLUTAINER_LOG_POLL_INTERVAL` (default 2s).
 
-8. **`healthcheck.sh`** — Sources `game-config.sh`, then uses `pyquake3.py` to send an RCON `status` command. Enabled by default; disable with `PLUTAINER_HEALTHCHECK=false`. HEALTHCHECK directive uses `--start-period=5m` to accommodate first-run downloads.
+9. **`healthcheck.sh`** — Sources `game-config.sh`, resolves the port, then uses `pyquake3.py`'s `update()` to send an **unauthenticated `getstatus`** and requires a non-empty map name in the reply. Enabled by default; disable with `PLUTAINER_HEALTHCHECK=false`. HEALTHCHECK directive uses `--start-period=5m` to accommodate first-run downloads.
 
-9. **`rcon-cli`** — Python script providing interactive and one-shot RCON access via `docker exec`. Calls `game-config.sh` to resolve port/credentials. Supports Plutonium, IW4x, and Alterware.
+   **Why not RCON `status`, which it used before:** both queries are handled by the same connectionless-packet path in the same server frame loop, and both read the map from the same `mapname`/`sv_mapname` cvar, so their failure detection is identical — a stalled loop replies to neither, and a server that has lost its map reports no map to either. RCON only added a dependency on `rcon_password`, which every bundled seed ships empty, so a perfectly healthy first-run server could never report healthy. Match the map key case-insensitively: iw4x/t4/t5/t6 answer `mapname`, t7x answers `MapName`.
 
-10. **`pyquake3.py`** — Python 3 Quake 3 protocol library (UDP). Used by the health check and `rcon-cli` for RCON queries.
+   **`getstatus` first, `getinfo` second — the order is load-bearing in both directions.** IW5 (MW3) does not answer `getstatus` at all, only `getinfo`, so without the fallback a healthy IW5 server reports unhealthy forever. T7x answers both, but its `infoResponse` advertises the *lobby's* map while `statusResponse` reports the map actually running (observed: `getinfo` → `mp_chinatown` while `getstatus` → `mp_spire` on the same server), so preferring `getinfo` would report the wrong map. Verified across iw4x, t4 MP/ZM, t6 MP/ZM, t7x MP/ZM (all via `getstatus`) and iw5 (via `getinfo`).
+
+10. **`rcon-cli`** — Python script providing interactive and one-shot RCON access via `docker exec`. Calls `game-config.sh` to resolve port/credentials. Supports Plutonium, IW4x, and Alterware.
+
+11. **`pyquake3.py`** — Minimal Quake 3 connectionless-protocol client (UDP), trimmed from the upstream GPL library to the two paths in use: `query_values(query)` (unauthenticated `getstatus`/`getinfo`) backs the health check, `rcon()` backs `rcon-cli`. The upstream `Player`/`parse_players`/`rcon_update` machinery was removed — nothing consumed it.
+
+    Two engine quirks live in `parse_packet`, both found the hard way:
+    - **T7x prefixes its `statusResponse` with a stray `0x44` byte** before the `\xff\xff\xff\xff` connectionless prefix. Demanding the prefix at offset 0 rejected it as `Malformed packet`, which is why **RCON never worked on t7x at all** — the old healthcheck failed there regardless of password. The prefix is now located within an 8-byte window.
+    - **Not every reply has a payload:** t5's zombies build answers unexpected connectionless packets with a bare `disconnect` and no newline. That is now parsed as "type, empty body" so the caller reports "replied without a map name" instead of a parse error.
+
+12. **`tools/refresh-seeds.sh`** — The only thing that should rewrite `seed-configs/`. Resolves each upstream repo's branch to a commit SHA, downloads that exact tarball, copies the per-repo subpaths, strips `*REFERENCE*` dirs and `.bat`/`.sh`/`README*`, appends the iw4x `sv_maprotation` block, applies `harden_rcon_for_docker` (below), and writes `seed-configs/<game>/SOURCE` with the commit.
+
+    **`harden_rcon_for_docker` — two upstream defaults that are wrong inside a container.** `rcon_localhost_bypass` is forced to `1` where the cvar exists (t5 ships `0`, which subjects even loopback to whitelist and rate-limit checks; `rcon-cli` runs over loopback inside the container). And every `rconWhitelistAdd` line is commented out: the seeds ship example IPs from another network (`192.168.0.7`, `10.0.0.12`, `172.16.8.7`), and per upstream's own comment a *non-empty* whitelist admits only those plus loopback — so the placeholders silently block the sidecar IW4MAdmin the user is trying to connect. Verified on a live t4 server: RCON from the Docker gateway was dropped until that gateway's exact IP was whitelisted, and works with no manual step once the placeholders are gone. **Ranges are not an option** — `rconWhitelistAdd "172.16.0.0/12"` answers `Error: Invalid address`, only single addresses are accepted — and enumerating Docker gateways is futile since subnets are user-defined (`172.17.0.1`, `172.26.10.1`, …). Commenting them out restores upstream's own "empty = all IPs" default; RCON still requires the password, which every seed ships empty. Takes game names to refresh a subset; honours `GITHUB_TOKEN` for API rate limits.
+
+    **Seeds are vendored, not fetched at build time.** Six `wget`s of six third-party repos meant any one of them disappearing broke the build for *every* game — and `alterware/t7x` 404'd during development, so this is not hypothetical. Worse, the `RUN` string never changed, so BuildKit cached the layer indefinitely: upstream edits were invisible until eviction and no image could say which revision it shipped. A `COPY` re-hashes on content, so updates are a reviewable commit. Five of the six upstream repos declare no license (`iw4x/iw4-server-configs` is BSD-3-Clause); the published images already redistributed these bytes, so vendoring changes nothing legally, but keep the attribution table in README.
 
 ## Volume Layout (v2)
 

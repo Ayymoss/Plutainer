@@ -1,0 +1,173 @@
+# One service block per supported game. Delete what you don't want.
+#
+# Every block is complete and independent — copy one into your own compose file
+# and it works, provided the gamefiles path and port are right.
+#
+# Ports here are the per-game defaults where possible; where two servers would
+# collide, the second is offset. One port per server.
+
+services:
+
+  # ---------------------------------------------------------------- Plutonium
+  # T4 — World at War. Multiplayer.
+  t4mp-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: t4mp-1
+    restart: unless-stopped
+    ports: ["28960:28960/udp"]
+    volumes:
+      - /opt/game-files/T4ServerFiles:/home/plutainer/gamefiles:ro
+      - ./t4mp-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: t4mp
+      PLUTAINER_CONFIG_FILE: server.cfg
+      PLUTAINER_PORT: "28960"
+      PLUTO_SERVER_KEY: ${T4MP_KEY}
+
+  # T4 — World at War. Zombies runs on the sp binary.
+  t4zm-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: t4zm-1
+    restart: unless-stopped
+    ports: ["28961:28961/udp"]
+    volumes:
+      - /opt/game-files/T4ServerFiles:/home/plutainer/gamefiles:ro
+      - ./t4zm-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: t4sp
+      PLUTAINER_CONFIG_FILE: server_zm.cfg
+      PLUTAINER_PORT: "28961"
+      PLUTO_SERVER_KEY: ${T4ZM_KEY}
+
+  # T5 — Black Ops. Multiplayer.
+  # NOTE: T5 needs a *valid* Plutonium key. A placeholder key leaves it stuck
+  # in a map-rotation loop forever. See docs/games.md#t5-black-ops.
+  t5mp-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: t5mp-1
+    restart: unless-stopped
+    ports: ["28962:28962/udp"]
+    volumes:
+      - /opt/game-files/T5ServerFiles:/home/plutainer/gamefiles:ro
+      - ./t5mp-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: t5mp
+      PLUTAINER_CONFIG_FILE: dedicated.cfg
+      PLUTAINER_PORT: "28962"
+      PLUTO_SERVER_KEY: ${T5MP_KEY}
+
+  # T5 — Black Ops. Zombies runs on the sp binary.
+  t5zm-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: t5zm-1
+    restart: unless-stopped
+    ports: ["28963:28963/udp"]
+    volumes:
+      - /opt/game-files/T5ServerFiles:/home/plutainer/gamefiles:ro
+      - ./t5zm-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: t5sp
+      PLUTAINER_CONFIG_FILE: dedicated_sp.cfg
+      PLUTAINER_PORT: "28963"
+      PLUTO_SERVER_KEY: ${T5ZM_KEY}
+      # Mods are a path under the game files, e.g.:
+      # PLUTAINER_MOD: mods/Stairway_to_hell_bo1
+
+  # T6 — Black Ops II. Multiplayer.
+  t6mp-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: t6mp-1
+    restart: unless-stopped
+    ports: ["4977:4977/udp"]
+    volumes:
+      - /opt/game-files/T6ServerFiles:/home/plutainer/gamefiles:ro
+      - ./t6mp-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: t6mp
+      PLUTAINER_CONFIG_FILE: dedicated.cfg
+      PLUTAINER_PORT: "4977"
+      PLUTO_SERVER_KEY: ${T6MP_KEY}
+
+  # T6 — Black Ops II. Zombies.
+  t6zm-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: t6zm-1
+    restart: unless-stopped
+    ports: ["4976:4976/udp"]
+    volumes:
+      - /opt/game-files/T6ServerFiles:/home/plutainer/gamefiles:ro
+      - ./t6zm-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: t6zm
+      PLUTAINER_CONFIG_FILE: dedicated_zm.cfg
+      PLUTAINER_PORT: "4976"
+      PLUTO_SERVER_KEY: ${T6ZM_KEY}
+
+  # IW5 — Modern Warfare 3. Multiplayer only.
+  iw5mp-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: iw5mp-1
+    restart: unless-stopped
+    ports: ["27016:27016/udp"]
+    volumes:
+      - /opt/game-files/IW5ServerFiles:/home/plutainer/gamefiles:ro
+      - ./iw5mp-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: iw5mp
+      PLUTAINER_CONFIG_FILE: server.cfg
+      PLUTAINER_PORT: "27016"
+      PLUTO_SERVER_KEY: ${IW5MP_KEY}
+
+  # --------------------------------------------------------------------- IW4x
+  # Modern Warfare 2. No server key. First start downloads 1-2 GB.
+  # amd64 only — see docs/games.md#architecture-support.
+  iw4x-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: iw4x-1
+    restart: unless-stopped
+    ports:
+      - "28964:28964/udp"
+      # TCP is only needed if you host mods (modlist metadata):
+      # - "28964:28964/tcp"
+    volumes:
+      - /opt/game-files/IW4xServerFiles:/home/plutainer/gamefiles:ro
+      - ./iw4x-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: iw4x
+      PLUTAINER_CONFIG_FILE: server.cfg
+      PLUTAINER_PORT: "28964"
+
+  # ---------------------------------------------------------------- Alterware
+  # T7x — Black Ops III. No server key.
+  t7x-zm-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: t7x-zm-1
+    restart: unless-stopped
+    ports: ["27017:27017/udp"]
+    volumes:
+      - /opt/game-files/T7xServerFiles:/home/plutainer/gamefiles:ro
+      - ./t7x-zm-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: t7x
+      PLUTAINER_CONFIG_FILE: server_zm.cfg
+      PLUTAINER_PORT: "27017"
+      # On T7x, PLUTAINER_MOD is a Steam Workshop ID:
+      # PLUTAINER_MOD: "2833912385"
+
+  # -------------------------------------------------------------------- CoD4x
+  # Modern Warfare. No server key, multiplayer only, amd64 only.
+  # The gamefiles mount needs only main/ and zone/.
+  cod4x-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: cod4x-1
+    restart: unless-stopped
+    ports: ["28965:28965/udp"]
+    volumes:
+      - /opt/game-files/IW3ServerFiles:/home/plutainer/gamefiles:ro
+      - ./cod4x-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: cod4x
+      PLUTAINER_CONFIG_FILE: server.cfg
+      PLUTAINER_PORT: "28965"
+      # Optional: without a token the server runs but stays unlisted.
+      # PLUTAINER_COD4X_AUTH_TOKEN: ${COD4X_TOKEN}

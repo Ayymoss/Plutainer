@@ -1,0 +1,109 @@
+# Game servers plus an IW4MAdmin sidecar.
+#
+# Three things make this work, and all three are easy to miss:
+#
+#   1. Every server has an RCON password (IW4MAdmin authenticates with it).
+#   2. IW4MAdmin mounts each server's LOG FILE, not a directory. Its reader
+#      checks the file's size to decide whether to read, and .NET reports a
+#      symlink's size as the length of the link text — so pointing it at
+#      Plutainer's logs/ symlink means it silently never reads an event.
+#      Mounting through logs/ makes Docker resolve the symlink at mount time,
+#      so the container sees a real file. See docs/iw4madmin.md.
+#   3. depends_on: service_healthy — IW4MAdmin aborts startup if a configured
+#      server doesn't answer, and IW4x can take minutes to download on a
+#      first run.
+#
+# On T5/T6, Plutainer whitelists the Docker gateway for RCON automatically.
+# See docs/iw4madmin.md.
+
+x-plutainer: &plutainer
+  image: ghcr.io/ayymoss/plutainer:latest
+  restart: unless-stopped
+  networks: [games-net]
+
+services:
+  t6zm-1:
+    <<: *plutainer
+    container_name: t6zm-1
+    ports: ["4976:4976/udp"]
+    volumes:
+      - /opt/game-files/T6ServerFiles:/home/plutainer/gamefiles:ro
+      - ./t6zm-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: t6zm
+      PLUTAINER_CONFIG_FILE: dedicated_zm.cfg
+      PLUTAINER_PORT: "4976"
+      PLUTO_SERVER_KEY: ${T6ZM_KEY}
+      PLUTAINER_RCON_PASSWORD: ${T6ZM_RCON}
+
+  cod4x-1:
+    <<: *plutainer
+    container_name: cod4x-1
+    ports: ["28965:28965/udp"]
+    volumes:
+      - /opt/game-files/IW3ServerFiles:/home/plutainer/gamefiles:ro
+      - ./cod4x-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: cod4x
+      PLUTAINER_CONFIG_FILE: server.cfg
+      PLUTAINER_PORT: "28965"
+      PLUTAINER_RCON_PASSWORD: ${COD4X_RCON}
+
+  iw4madmin:
+    image: ghcr.io/raidmax/iw4madmin:latest
+    container_name: iw4madmin
+    restart: unless-stopped
+    ports:
+      - "1624:1624"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+    volumes:
+      - ./IW4MAdmin/Configuration:/app/Configuration
+      - ./IW4MAdmin/Plugins:/app/Plugins
+      - ./IW4MAdmin/Localization:/app/Localization
+      - ./IW4MAdmin/Database:/app/Database
+      - ./IW4MAdmin/Log:/app/Log
+      # The log FILE per server, read-only. The game server must be running
+      # before this container starts, or Docker creates a directory here —
+      # depends_on below handles that.
+      - ./t6zm-1/logs/games_zm.log:/gamelogs/t6zm-1/logs/games_zm.log:ro
+      - ./cod4x-1/logs/games_mp.log:/gamelogs/cod4x-1/logs/games_mp.log:ro
+    depends_on:
+      t6zm-1:
+        condition: service_healthy
+      cod4x-1:
+        condition: service_healthy
+    networks: [iw4m-net]
+
+networks:
+  games-net:
+    driver: bridge
+  iw4m-net:
+    driver: bridge
+
+# IW4MAdmin needs Configuration/IW4MAdminSettings.json to exist before it will
+# start. Server entries look like this — address servers by your host IP and
+# published port. Parser names per game are in docs/iw4madmin.md.
+#
+#   {
+#     "Servers": [
+#       {
+#         "IPAddress": "10.0.0.5",
+#         "Port": 4976,
+#         "Password": "your-rcon-password",
+#         "ManualLogPath": "/gamelogs/t6zm-1/logs/games_zm.log",
+#         "RConParserVersion": "Plutonium T6 Parser (2024)",
+#         "EventParserVersion": "Plutonium T6 Parser (2024)"
+#       },
+#       {
+#         "IPAddress": "10.0.0.5",
+#         "Port": 28965,
+#         "Password": "your-rcon-password",
+#         "ManualLogPath": "/gamelogs/cod4x-1/logs/games_mp.log",
+#         "RConParserVersion": "CoD4x Parser",
+#         "EventParserVersion": "CoD4x Parser"
+#       }
+#     ]
+#   }

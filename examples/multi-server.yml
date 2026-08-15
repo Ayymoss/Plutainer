@@ -1,0 +1,79 @@
+# Several servers on one host.
+#
+# The pattern: one game-files copy shared read-only by everything that uses it,
+# one app directory and one port per server.
+
+x-plutainer: &plutainer
+  image: ghcr.io/ayymoss/plutainer:latest
+  restart: unless-stopped
+  networks: [games-net]
+
+services:
+  t6zm-1:
+    <<: *plutainer
+    container_name: t6zm-1
+    ports: ["4976:4976/udp"]
+    volumes:
+      - /opt/game-files/T6ServerFiles:/home/plutainer/gamefiles:ro   # shared
+      - ./t6zm-1:/home/plutainer/app                                 # per-server
+    environment:
+      PLUTAINER_GAME: t6zm
+      PLUTAINER_CONFIG_FILE: dedicated_zm.cfg
+      PLUTAINER_PORT: "4976"
+      PLUTO_SERVER_KEY: ${T6ZM_KEY}
+      PLUTAINER_RCON_PASSWORD: ${T6ZM_RCON}
+
+  t6mp-1:
+    <<: *plutainer
+    container_name: t6mp-1
+    ports: ["4977:4977/udp"]
+    volumes:
+      - /opt/game-files/T6ServerFiles:/home/plutainer/gamefiles:ro   # same files
+      - ./t6mp-1:/home/plutainer/app                                 # own data
+    environment:
+      PLUTAINER_GAME: t6mp
+      PLUTAINER_CONFIG_FILE: dedicated.cfg
+      PLUTAINER_PORT: "4977"
+      PLUTO_SERVER_KEY: ${T6MP_KEY}
+      PLUTAINER_RCON_PASSWORD: ${T6MP_RCON}
+
+  iw4x-1:
+    <<: *plutainer
+    container_name: iw4x-1
+    ports: ["28960:28960/udp"]
+    volumes:
+      - /opt/game-files/IW4xServerFiles:/home/plutainer/gamefiles:ro
+      - ./iw4x-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: iw4x
+      PLUTAINER_CONFIG_FILE: server.cfg
+      PLUTAINER_PORT: "28960"
+      PLUTAINER_RCON_PASSWORD: ${IW4X_RCON}
+
+  cod4x-1:
+    <<: *plutainer
+    container_name: cod4x-1
+    ports: ["28965:28965/udp"]
+    volumes:
+      - /opt/game-files/IW3ServerFiles:/home/plutainer/gamefiles:ro
+      - ./cod4x-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: cod4x
+      PLUTAINER_CONFIG_FILE: server.cfg
+      PLUTAINER_PORT: "28965"
+      PLUTAINER_RCON_PASSWORD: ${COD4X_RCON}
+
+  # Restarts servers that go unhealthy. Docker's own restart policy only
+  # reacts to a container *exiting*, which a hung server never does.
+  autoheal:
+    image: willfarrell/autoheal
+    container_name: autoheal
+    restart: unless-stopped
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+networks:
+  games-net:
+    driver: bridge

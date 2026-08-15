@@ -1,2 +1,5 @@
 EXAMPLE-docker-compose.yml
 .github/
+examples/
+docs/
+*.md

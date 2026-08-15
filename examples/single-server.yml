@@ -1,0 +1,38 @@
+# One Black Ops II zombies server — the smallest thing that works.
+#
+#   1. Point the gamefiles path at your own copy
+#   2. Put T6ZM_KEY in a .env file beside this one (see env.example)
+#   3. docker compose up -d
+#
+# Swap the three PLUTAINER_* values to run a different game — see
+# docs/games.md for the tags, config names and default ports.
+
+services:
+  t6zm-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: t6zm-1
+    hostname: t6zm-1
+    restart: unless-stopped
+
+    ports:
+      - "4976:4976/udp"
+
+    volumes:
+      # Your game files. Read-only, and shareable with other servers.
+      - /opt/game-files/T6ServerFiles:/home/plutainer/gamefiles:ro
+      # Server data: configs, logs, downloaded binaries. Yours to keep.
+      - ./t6zm-1:/home/plutainer/app
+
+    environment:
+      PLUTAINER_GAME: t6zm
+      PLUTAINER_CONFIG_FILE: dedicated_zm.cfg
+      PLUTAINER_PORT: "4976"
+
+      # Plutonium titles only (t4/t5/t6/iw5). Get one at
+      # https://platform.plutonium.pw/serverkeys
+      PLUTO_SERVER_KEY: ${T6ZM_KEY}
+
+      # Optional. RCON is disabled until a password exists.
+      PLUTAINER_RCON_PASSWORD: ${T6ZM_RCON}
+
+# After first start, edit ./t6zm-1/configs/dedicated_zm.cfg and restart.
