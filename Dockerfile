@@ -38,6 +38,15 @@ WORKDIR /home/plutainer/.plutainer
 # missing display driver and still initialises the prefix.
 RUN wineboot -u && wineserver -w
 
+# SteamCMD installs and updates the native 7 Days to Die dedicated server at
+# runtime. It is a 32-bit bootstrapper; the multilib libraries above satisfy
+# it, while the game server it installs is x86_64.
+RUN mkdir -p steamcmd && \
+    wget -qO steamcmd/steamcmd_linux.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz && \
+    tar -xzf steamcmd/steamcmd_linux.tar.gz -C steamcmd && \
+    rm steamcmd/steamcmd_linux.tar.gz && \
+    steamcmd/steamcmd.sh +quit
+
 RUN wget https://github.com/mxve/plutonium-updater.rs/releases/latest/download/plutonium-updater-x86_64-unknown-linux-gnu.tar.gz -O plutonium-updater.tar.gz && \
     tar -xzvf plutonium-updater.tar.gz && \
     rm plutonium-updater.tar.gz
@@ -95,13 +104,13 @@ COPY --chown=plutainer:plutainer seed-configs/ seed-configs/
 
 COPY --chown=plutainer:plutainer scripts/ .
 RUN chmod +x entrypoint.sh healthcheck.sh plutoentry.sh iw4xentry.sh alterentry.sh \
-              cod4xentry.sh log-watcher.sh rcon-cli game-config.sh migrate-v1-to-v2.sh
+              cod4xentry.sh 7dtdentry.sh log-watcher.sh rcon-cli game-config.sh migrate-v1-to-v2.sh
 
 USER root
 RUN ln -s /home/plutainer/.plutainer/rcon-cli /usr/local/bin/rcon-cli
 USER plutainer
 
-STOPSIGNAL SIGKILL
+STOPSIGNAL SIGTERM
 
 HEALTHCHECK --interval=1m --timeout=10s --start-period=5m --retries=3 \
   CMD ./healthcheck.sh

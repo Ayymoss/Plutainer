@@ -13,6 +13,7 @@ What each game needs from you, and what Plutainer supplies. Find your game, chec
 | Modern Warfare 2 | `iw4x` | no | 28960 | `server.cfg`, `serverlan.cfg`, `partyserver.cfg`, `partyserverlan.cfg` |
 | Black Ops III | `t7x` | no | 27017 | `server.cfg`, `server_zm.cfg`, `server_cp.cfg` |
 | Modern Warfare | `cod4x` | token, to be listed | 28960 | `server.cfg` |
+| 7 Days to Die | `7dtd` | no | 26900 | `serverconfig.xml` from the Steam depot |
 
 `PLUTAINER_CONFIG_FILE` must name one of the seeded files, or a config you place in `app/configs/` yourself. Get it wrong and the container refuses to start with a hint listing what it found — including case-only mismatches like `Server.cfg` vs `server.cfg`.
 
@@ -21,6 +22,8 @@ The `sp` tags are how Plutonium runs zombies/co-op: **T4 zombies is `t4sp`** wit
 ## What goes in the gamefiles mount
 
 Mounted read-only at `/home/plutainer/gamefiles`. One copy can be shared by any number of servers.
+
+**7 Days to Die is the exception:** do not mount game files. Plutainer installs the official dedicated server anonymously through SteamCMD into `app/runtime/7dtd/` and keeps world data in `app/runtime/7dtd-data/`.
 
 ### Plutonium (T4, T5, T6, IW5)
 
@@ -47,6 +50,20 @@ BO3 server files: `BlackOps3_UnrankedDedicatedServer.exe`, `zone/`, `machinecfg`
 Plutainer ships the server binary and the two assets a stock install lacks — `cod4x_patchv2.ff` and `jcod4x_00.iwd` — so nothing is downloaded at runtime.
 
 ## Per-game notes
+
+### 7 Days to Die
+
+Use `PLUTAINER_GAME=7dtd`. On first start SteamCMD downloads dedicated-server app `294420`; later starts update it unless `PLUTAINER_AUTO_UPDATE=false`. The current depot's `serverconfig.xml` is copied to `app/configs/serverconfig.xml` only when that file does not already exist, so your edits persist.
+
+Allow roughly 15 GB of persistent storage for the Linux depot, plus additional space for generated worlds, saves, and mods.
+
+`PLUTAINER_PORT` updates the XML `ServerPort` property at startup. Publish that port as TCP and UDP, plus the following three UDP ports. For the default this is TCP `26900` and UDP `26900-26903`.
+
+No gamefiles mount, Steam account, or game key is required. The server is amd64-only. Plutainer's Quake RCON client does not apply to 7DTD; use the game's own telnet/web administration options configured in `serverconfig.xml`.
+
+On container stop, Plutainer forwards `SIGTERM` to the native Linux server and waits while its `ServerShutdown` path saves the world and exits. Set `stop_grace_period: 2m` as shown in the Compose example; Docker's stop timeout remains the hard limit if the game hangs.
+
+`PLUTAINER_USE_RAW_CONFIGS` and `PLUTAINER_MOD` do not apply. Put server mods in `app/runtime/7dtd/Mods/` so SteamCMD leaves them alongside the persistent installation.
 
 ### T5 (Black Ops)
 
@@ -101,6 +118,7 @@ Upstream ships `sv_maprotation` commented out, which would leave `+map_rotate` w
 
 - **IW4x does not work on arm64.** Upstream publishes `x86_64` binaries only, so the arm64 image builds the launcher from source, and that build is currently broken ([iw4x/launcher#76](https://github.com/iw4x/launcher/issues/76)). It refuses to start and says why. It will work again automatically once upstream builds.
 - **CoD4x is amd64-only, permanently.** Its server is a 32-bit x86 Linux binary, which cannot execute on arm64 at all.
+- **7 Days to Die is amd64-only.** SteamCMD and the official native Linux dedicated server are x86 binaries; the arm64 image deliberately refuses with an explanation.
 
 Plutonium and T7x work on both. If an arm64 build fails outright, `:latest` publishes amd64-only rather than being held back — check with `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` before upgrading an arm64 host.
 

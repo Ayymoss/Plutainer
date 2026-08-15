@@ -2,11 +2,13 @@
 
 ## What "healthy" means
 
-Plutainer asks the server for its status and requires it to **name a loaded map**. A container is healthy only when the game is genuinely serving — not merely when the process is alive.
+For Call of Duty engines, Plutainer asks the server for its status and requires it to **name a loaded map**. For 7 Days to Die, it requires the dedicated process and a successful TCP connection to the configured game port.
 
 1. Work out the game and port.
 2. Send an unauthenticated `getstatus` to `127.0.0.1`, falling back to `getinfo`.
 3. Require a map name in the reply.
+
+The 7DTD branch instead checks `7DaysToDieServer.x86_64` and connects to `127.0.0.1:<game port>`; it does not speak the Quake status protocol.
 
 ```
 [OK] Health check passed: Server is responsive on port 4976 (map: zm_buried (via getstatus)).
@@ -20,7 +22,7 @@ Disable with `PLUTAINER_HEALTHCHECK=false`.
 
 ### Start period
 
-The healthcheck allows **five minutes** before failures count, because a first start downloads a lot (IW4x 1–2 GB, Plutonium ~500 MB). During that window `docker ps` shows `starting`.
+The healthcheck allows **five minutes** before failures count, because a first start downloads a lot (including the full 7DTD dedicated server through SteamCMD). During that window `docker ps` shows `starting`.
 
 ## Restart behaviour
 
@@ -32,7 +34,7 @@ No restart loop, no log spam burying the error. Fix it and `docker restart <cont
 
 **Runtime crashes** — the game exits on its own. Plutainer waits **30 seconds**, then exits with the game's code, letting your `restart:` policy take over. That throttles a crash loop to roughly one restart per 30s instead of hammering.
 
-`STOPSIGNAL` is `SIGKILL`, so `docker stop` is immediate either way.
+Docker sends `SIGTERM` to Plutainer's launch wrapper. Call of Duty families retain their immediate-stop behaviour. For 7DTD, the wrapper forwards the signal to the native server and waits for its `ServerShutdown` save path to finish; its Compose example allows a two-minute grace period. Docker still force-kills the container if that timeout expires.
 
 ## Auto-restarting unhealthy servers
 

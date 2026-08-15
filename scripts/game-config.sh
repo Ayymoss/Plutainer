@@ -36,16 +36,64 @@ hold_indefinitely() {
   exec sleep infinity
 }
 
-# Run the game binary, then sleep 30s before letting the container exit.
+# Run the game binary, forward Docker's stop signal, then sleep 30s before
+# letting the container exit after an unrequested game crash.
 # Restart policies (e.g. `restart: unless-stopped`) react to container exit
 # but docker compose has no native min-delay knob — the in-script sleep is
 # how we throttle real crashes to one restart per ~30s.
+#
+# A game entrypoint may define graceful_shutdown_game(). On SIGTERM/SIGINT it
+# is called while the child is still running, then this wrapper waits for the
+# child to finish. Families without that hook retain the historical immediate
+# stop by receiving SIGKILL. Docker kills the whole container if its configured
+# stop timeout expires, so a broken graceful hook cannot hang forever.
 # Args: command + its arguments (e.g. wine ...).
 launch_game() {
   set +e
-  "$@"
-  local rc=$?
+  "$@" &
+  local game_pid=$!
+  local rc=0
+  local stop_requested=false
+
+  _plutainer_handle_stop() {
+    stop_requested=true
+    # Docker normally sends one signal, but ignore repeats while the graceful
+    # hook is running. Its stop timeout remains the hard upper bound.
+    trap - TERM INT
+
+    if declare -F graceful_shutdown_game >/dev/null 2>&1; then
+      echo "[INFO] Stop requested; asking the game server to shut down gracefully."
+      if ! graceful_shutdown_game "$game_pid"; then
+        echo "[WARN] Graceful shutdown request failed; forwarding SIGTERM to the game process." >&2
+        kill -TERM "$game_pid" 2>/dev/null || true
+      fi
+    else
+      # Preserve the pre-existing instant-stop behaviour for the CoD engines.
+      kill -KILL "$game_pid" 2>/dev/null || true
+    fi
+  }
+
+  trap _plutainer_handle_stop TERM INT
+
+  # `wait` returns when a trapped signal interrupts it even if the child is
+  # still alive. Re-enter it after the graceful request and wait for the real
+  # process exit.
+  while true; do
+    wait "$game_pid"
+    rc=$?
+    if [[ "$stop_requested" == "true" ]] && kill -0 "$game_pid" 2>/dev/null; then
+      continue
+    fi
+    break
+  done
+
+  trap - TERM INT
   set -e
+
+  if [[ "$stop_requested" == "true" ]]; then
+    echo "[INFO] Game server stopped."
+    exit 0
+  fi
 
   echo "[INFO] Game process exited (rc=$rc)." >&2
   echo "[INFO] Sleeping 30s before container exit to throttle restart." >&2
@@ -53,7 +101,7 @@ launch_game() {
   exit "$rc"
 }
 
-# Derive the game family ("plutonium", "iw4x", "alterware") from PLUTAINER_GAME.
+# Derive the game family from PLUTAINER_GAME.
 # Returns 1 if unknown.
 derive_family() {
   case "$1" in
@@ -61,6 +109,7 @@ derive_family() {
     iw4x)                                echo "iw4x" ;;
     t7x)                                 echo "alterware" ;;
     cod4x)                               echo "cod4x" ;;
+    7dtd)                                echo "7dtd" ;;
     *)                                   return 1 ;;
   esac
 }
@@ -84,6 +133,7 @@ detect_game_type() {
     iw4x)      BASE_GAME="iw4x" ;;
     alterware) BASE_GAME="${GAME_NAME}" ;;
     cod4x)     BASE_GAME="cod4x" ;;
+    7dtd)      BASE_GAME="7dtd" ;;
   esac
 
   CONFIG_FILE="${PLUTAINER_CONFIG_FILE:-}"
@@ -101,6 +151,7 @@ resolve_default_port() {
     "t6")        DEFAULT_PORT="4976"  ;;
     "t7x")       DEFAULT_PORT="27017" ;;
     "cod4x")     DEFAULT_PORT="28960" ;;
+    "7dtd")      DEFAULT_PORT="26900" ;;
     *)
       echo "[ERROR] Could not determine default port for game '${base_game}'." >&2
       return 1
@@ -123,6 +174,7 @@ resolve_engine_config_dir() {
     iw4x)      ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/userraw" ;;
     alterware) ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone" ;;
     cod4x)     ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/main" ;;
+    7dtd)      ENGINE_CONFIG_DIR="$PLUTAINER_CONFIGS_DIR" ;;
     *)
       echo "[ERROR] Unknown game type '${GAME_TYPE}'." >&2
       return 1
