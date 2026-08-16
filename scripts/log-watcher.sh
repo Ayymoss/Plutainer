@@ -144,6 +144,17 @@ MAX_SIZE=$(parse_size "$MAX_SIZE_RAW") || {
   MAX_SIZE=0
 }
 
+# Copy-truncate is only valid against a writer that opened its log with
+# O_APPEND, which every CoD engine here does. A writer that tracks its own file
+# offset — a Unity dedicated server's -logfile, for one — would carry on writing
+# at the old offset after truncation, leaving a sparse hole and an apparent size
+# that snaps straight back over the limit, so rotation would fire on every poll.
+# Families that cannot prove their writer appends set PLUTAINER_LOG_ROTATE=false.
+if [[ "${PLUTAINER_LOG_ROTATE:-true}" == "false" ]]; then
+  MAX_SIZE=0
+  ROTATE_DISABLED_REASON=" (PLUTAINER_LOG_ROTATE=false)"
+fi
+
 rotate_if_oversized() {
   local path="$1" size
   (( MAX_SIZE > 0 )) || return 0
@@ -218,7 +229,21 @@ echo "[log-watcher] started; boot_ts=$BOOT_TS stable_dir=$STABLE_DIR"
 if (( MAX_SIZE > 0 )); then
   echo "[log-watcher] rotating game logs above ${MAX_SIZE_RAW} (keeping ${KEEP})"
 else
-  echo "[log-watcher] log rotation disabled"
+  echo "[log-watcher] log rotation disabled${ROTATE_DISABLED_REASON:-}"
+fi
+
+# Directories to keep the poller out of, colon separated. A SteamCMD install is
+# tens of thousands of files and gets walked every POLL_INTERVAL seconds
+# otherwise, for logs that belong to the game's own installer rather than to a
+# running server.
+declare -a PRUNE_ARGS=( -path "$STABLE_DIR" -prune )
+if [[ -n "${PLUTAINER_LOG_PRUNE_DIRS:-}" ]]; then
+  IFS=':' read -ra _prune_dirs <<< "$PLUTAINER_LOG_PRUNE_DIRS"
+  for _dir in "${_prune_dirs[@]}"; do
+    [[ -n "$_dir" ]] || continue
+    PRUNE_ARGS+=( -o -path "$_dir" -prune )
+    echo "[log-watcher] not scanning $_dir"
+  done
 fi
 
 while true; do
@@ -237,7 +262,7 @@ while true; do
       NEWEST_MTIME[$name]=$mtime
       NEWEST_PATH[$name]=$path
     fi
-  done < <(find "$APP_DIR" -path "$STABLE_DIR" -prune -o -type f -name '*.log' -print0 2>/dev/null)
+  done < <(find "$APP_DIR" "${PRUNE_ARGS[@]}" -o -type f -name '*.log' -print0 2>/dev/null)
 
   for name in "${!NEWEST_PATH[@]}"; do
     path="${NEWEST_PATH[$name]}"
