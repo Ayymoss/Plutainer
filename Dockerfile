@@ -93,14 +93,36 @@ RUN set -eux; \
 # tools/refresh-seeds.sh is the only thing that should rewrite these.
 COPY --chown=plutainer:plutainer seed-configs/ seed-configs/
 
+# SteamCMD, which installs and updates the SteamCMD family's dedicated servers
+# at runtime (7DTD, L4D2, ...). The bootstrapper is a 32-bit binary satisfied by
+# the multilib libraries above; the servers it installs are x86_64.
+#
+# Placed after everything the Call of Duty families need, so adding or bumping
+# it never invalidates their layers.
+#
+# Deliberately NOT running `steamcmd.sh +quit` here to pre-bootstrap the Steam
+# client: that pulls a few hundred MB into $HOME which every CoD-only user would
+# then carry forever, and steamcmd self-updates on first run anyway. We just
+# removed 340 MB of Xvfb for the same reason. The cost is a slower first start
+# for SteamCMD games only.
+RUN mkdir -p steamcmd && \
+    wget -qO steamcmd.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz && \
+    tar -xzf steamcmd.tar.gz -C steamcmd && \
+    rm steamcmd.tar.gz
+
 COPY --chown=plutainer:plutainer scripts/ .
-RUN chmod +x entrypoint.sh healthcheck.sh plutoentry.sh iw4xentry.sh alterentry.sh \
-              cod4xentry.sh log-watcher.sh rcon-cli game-config.sh migrate-v1-to-v2.sh
+# Everything executable, rather than a list that silently rots as scripts move
+# between directories.
+RUN find . -type f -name '*.sh' -exec chmod +x {} + && chmod +x rcon-cli
 
 USER root
 RUN ln -s /home/plutainer/.plutainer/rcon-cli /usr/local/bin/rcon-cli
 USER plutainer
 
+# SIGKILL, unchanged. `docker stop` is instant and the Call of Duty engines lose
+# nothing by it. A SteamCMD game with world state to flush asks for SIGTERM in
+# its own compose service (stop_signal + stop_grace_period) — see
+# launch_game_graceful in scripts/lib/game-config.sh.
 STOPSIGNAL SIGKILL
 
 HEALTHCHECK --interval=1m --timeout=10s --start-period=5m --retries=3 \

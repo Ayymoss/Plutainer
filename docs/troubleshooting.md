@@ -178,6 +178,34 @@ Known and expected — upstream's launcher doesn't build for arm64 right now ([i
 
 Permanent, not a bug: its server is a 32-bit x86 Linux binary and cannot execute on arm64.
 
+### A SteamCMD game refuses to start on arm64
+
+Expected: `SteamCMD is not present in this image`. Valve ships SteamCMD as x86_64 only, so `7dtd` and `hl2dm` need the amd64 image.
+
+---
+
+## SteamCMD games
+
+### First start takes forever / goes `unhealthy` before it finishes
+
+7DTD is about 17 GB. On a slow connection that outlasts the five-minute health grace period, so the container is marked `unhealthy` while it is still downloading, then recovers by itself. Watch `docker logs -f` rather than `docker ps`.
+
+### `Failed to install app '<id>' (Missing configuration)`
+
+SteamCMD's first contact in a fresh container is unreliable — it downloads its own client, re-execs, and an update issued before that settles fails this way. Plutainer retries three times, which has always been enough. If all three fail, the message is real: check the app ID and that the disk has room.
+
+### `Failed to install app '<id>' (Invalid platform)`
+
+That app has no Linux depot available to anonymous SteamCMD. Nothing Plutainer can do. Left 4 Dead 2 is the notable case — see [Games](games.md#half-life-2-deathmatch-hl2dm).
+
+### My world wasn't saved when I stopped the container
+
+Add `stop_signal: SIGTERM` and `stop_grace_period: 90s` to that service. The image's default is `SIGKILL`, which is instant and right for the Call of Duty engines but gives a world-based game no chance to save. See [Healthcheck](healthcheck.md#restart-behaviour).
+
+### The disk filled up
+
+The SteamCMD install lives in your app volume, not the image — 7DTD alone is ~17 GB. Point the volume somewhere with room; `app/runtime/steam/<game>/` is the large part, and it can be deleted and re-downloaded without losing worlds or configs.
+
 ### `no matching manifest for linux/arm64`
 
 You pulled `:edge`, which is amd64-only. Use `:latest`. If `:latest` is also amd64-only, an arm64 build failed — check `docker manifest inspect ghcr.io/ayymoss/plutainer:latest`.

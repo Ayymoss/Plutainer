@@ -19,7 +19,7 @@ verbatim by rcon-cli anyway.
 import socket
 
 
-class PyQuake3(object):
+class Quake3Server(object):
     """A single UDP conversation with one game server."""
 
     packet_prefix = b'\xff' * 4

@@ -174,3 +174,99 @@ services:
       # but never registers with the master, so nobody finds it.
       # 32-character token from http://cod4master.cod4x.ovh
       # PLUTAINER_COD4X_AUTH_TOKEN: ${COD4X_TOKEN}
+
+  # ------------------------------------------------------------- SteamCMD
+  # These install themselves. No gamefiles mount, no Steam login, no key.
+  # amd64 only. Budget the disk: CS2 ~67 GB, 7DTD ~17 GB, L4D2 ~9 GB, HL2:DM ~6 GB.
+
+  # 7 Days to Die. Native Linux server (Unity), telnet console.
+  7dtd-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: 7dtd-1
+    restart: unless-stopped
+    # The image stops with SIGKILL, which is right for the CoD engines but would
+    # cost 7DTD its world save. Ask for SIGTERM and give it time to finish.
+    # Docker still force-kills once the grace period expires.
+    stop_signal: SIGTERM
+    stop_grace_period: 90s
+    ports:
+      - "26900:26900/tcp"
+      - "26900-26903:26900-26903/udp"
+    volumes:
+      - ./7dtd-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: 7dtd
+      PLUTAINER_PORT: "26900"
+      PLUTAINER_SERVER_NAME: My 7 Days to Die Server
+      # Enables the telnet console and sets its password, so rcon-cli works.
+      PLUTAINER_RCON_PASSWORD: ${SEVENDTD_RCON}
+      # Optional Steam branch:
+      # PLUTAINER_STEAM_BETA: latest_experimental
+
+  # Counter-Strike 2. Source 2. ~67 GB installed — check your disk first.
+  # First start will exceed the health grace period and show `unhealthy`
+  # while it downloads; it recovers on its own.
+  cs2-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: cs2-1
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    ports:
+      - "27019:27019/udp"
+      - "27019:27019/tcp"
+    volumes:
+      - ./cs2-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: cs2
+      PLUTAINER_PORT: "27019"
+      PLUTAINER_SERVER_NAME: My CS2 Server
+      PLUTAINER_RCON_PASSWORD: ${CS2_RCON}
+      # Needed to appear in the server browser. The server runs without it,
+      # but nobody finds it. Get one at:
+      # https://steamcommunity.com/dev/managegameservers
+      PLUTAINER_CS2_GSLT: ${CS2_GSLT}
+      # PLUTAINER_CS2_GAME_ALIAS: competitive
+      # PLUTAINER_START_MAP: de_dust2
+
+  # Left 4 Dead 2. Native Linux Source server, Valve RCON.
+  # First start is slow: Valve only offers this app's content depot to Windows,
+  # so Plutainer pulls it as Windows and then overlays the Linux binaries.
+  # ~9.2 GB. See docs/games.md#the-source-games-l4d2-hl2dm.
+  l4d2-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: l4d2-1
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    ports:
+      - "27015:27015/udp"
+      - "27015:27015/tcp"
+    volumes:
+      - ./l4d2-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: l4d2
+      PLUTAINER_PORT: "27015"
+      PLUTAINER_SERVER_NAME: My L4D2 Server
+      PLUTAINER_RCON_PASSWORD: ${L4D2_RCON}
+      # PLUTAINER_START_MAP: c2m1_highway
+
+  # Half-Life 2: Deathmatch. Source dedicated server, Valve RCON.
+  hl2dm-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: hl2dm-1
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    ports:
+      - "27018:27018/udp"
+      - "27018:27018/tcp"
+    volumes:
+      - ./hl2dm-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: hl2dm
+      PLUTAINER_PORT: "27018"
+      PLUTAINER_SERVER_NAME: My HL2DM Server
+      PLUTAINER_RCON_PASSWORD: ${HL2DM_RCON}
+      # PLUTAINER_MAX_CLIENTS: "16"
+      # PLUTAINER_START_MAP: dm_lockdown

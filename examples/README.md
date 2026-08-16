@@ -12,9 +12,9 @@ Copy the one that matches what you're doing, adjust the paths, `docker compose u
 
 ## The three things you must change
 
-1. **The gamefiles path** — `/opt/game-files/…` in every example. Point it at your own copy.
-2. **`PLUTAINER_CONFIG_FILE`** — must name a config Plutainer seeds for that game ([list](../docs/games.md#at-a-glance)).
-3. **Ports** — one server per port. Publish UDP.
+1. **The gamefiles path** — `/opt/game-files/…` in most examples. Point it at your own copy. The SteamCMD games need no gamefiles mount.
+2. **`PLUTAINER_CONFIG_FILE`** — must name a config Plutainer seeds for that game ([list](../docs/games.md#at-a-glance)); the SteamCMD games default to their own config name.
+3. **Ports** — one server per port. Most games publish UDP; follow each example's port block.
 
 ## Secrets
 

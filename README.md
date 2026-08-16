@@ -1,6 +1,6 @@
 # Plutainer
 
-Run a Call of Duty dedicated server in Docker. One image, seven games, configured with environment variables.
+Run a dedicated game server in Docker. One image, eleven games, configured with environment variables.
 
 ```yaml
 services:
@@ -32,8 +32,12 @@ services:
 | Modern Warfare 2 (IW4x) | `iw4x` | No key. amd64 only |
 | Black Ops III (T7x) | `t7x` | Alterware. No key |
 | Modern Warfare (CoD4x) | `cod4x` | Multiplayer only, amd64 only. Needs a [masterserver token](docs/games.md#cod4x-modern-warfare) to appear in the server browser |
+| 7 Days to Die | `7dtd` | Native Linux server, amd64 only. Installed by SteamCMD; no gamefiles mount |
+| Counter-Strike 2 | `cs2` | Source 2, amd64 only. Installed by SteamCMD; ~67 GB. Needs a [GSLT](docs/games.md#the-source-games-cs2-l4d2-hl2dm) to be listed |
+| Left 4 Dead 2 | `l4d2` | Source engine, amd64 only. Installed by SteamCMD; no gamefiles mount |
+| Half-Life 2: Deathmatch | `hl2dm` | Source engine, amd64 only. Installed by SteamCMD; no gamefiles mount |
 
-Image: `ghcr.io/ayymoss/plutainer:latest` — multi-arch (amd64 + arm64), with [two exceptions](docs/games.md#architecture-support).
+Image: `ghcr.io/ayymoss/plutainer:latest` — multi-arch (amd64 + arm64), with [documented architecture exceptions](docs/games.md#architecture-support).
 
 ## Documentation
 
@@ -53,7 +57,7 @@ Image: `ghcr.io/ayymoss/plutainer:latest` — multi-arch (amd64 + arm64), with [
 ## What Plutainer does for you
 
 - **Writes a working config on first start.** Community defaults are seeded into `app/configs/`, and never overwrite files you've edited.
-- **Fetches the server binaries.** Plutonium, IW4x and T7x updaters run at startup; CoD4x ships in the image. You supply only the base game files.
+- **Fetches the server binaries.** Plutonium, IW4x and T7x updaters run at startup; CoD4x ships in the image; the SteamCMD games install themselves. You supply base game files only for the games that need them.
 - **Puts every config in one folder.** Edit `app/configs/whatever.cfg`; Plutainer symlinks it to wherever the engine expects it.
 - **Keeps logs findable.** `app/logs/` holds stable symlinks to the active log files, wherever the game moved them.
 - **Fails loudly, not endlessly.** A misconfiguration holds the container in `Up` with a readable error instead of a restart loop.

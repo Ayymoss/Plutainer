@@ -11,17 +11,21 @@ Where everything lives, and why your configs are in one folder instead of scatte
 
 The gamefiles mount is read-only and shareable — point ten servers at the same copy. Anything an updater downloads goes into `app/` instead, so don't stage binaries in the gamefiles mount.
 
+The SteamCMD games (`7dtd`, `hl2dm`) do not use `/home/plutainer/gamefiles` at all; SteamCMD installs them under the app volume instead.
+
 ## What appears in `app/`
 
 Created on first start:
 
 ```
 app/
-  configs/            ← your *.cfg files. This is the one you care about
+  configs/            ← your *.cfg files (or serverconfig.xml for 7DTD)
   logs/               ← stable symlinks to the active *.log files
   runtime/
     gamefiles/        ← symlinks into your read-only mount + writable game state
     plutonium/        ← Plutonium binaries and storage
+    steam/<game>/     ← SteamCMD-managed install (SteamCMD games)
+    gamedata/<game>/  ← worlds, saves, logs (SteamCMD games)
   .plutainer-version  ← layout marker
 ```
 

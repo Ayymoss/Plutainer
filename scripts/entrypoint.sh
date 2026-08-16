@@ -6,7 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/game-config.sh"
+source "$SCRIPT_DIR/lib/core.sh"
 
 # --- Branding ---
 cat << "EOF"
@@ -52,25 +52,22 @@ fi
 
 # --- Detect game type from PLUTAINER_GAME ---
 if ! detect_game_type; then
-  hold_indefinitely "Set PLUTAINER_GAME to one of: t4mp, t4sp, t5mp, t5sp, t6mp, t6zm, iw5mp, iw4x, t7x"
+  hold_indefinitely "Set PLUTAINER_GAME to one of: ${PLUTAINER_KNOWN_GAMES}"
 fi
 
-# --- Dispatch to game-specific entrypoint ---
+# --- Dispatch to the family entry script ---
+#
+# Two families, two entry scripts. Each is table-driven over its own game list,
+# so adding a game never adds a branch here.
 case "$GAME_TYPE" in
-  plutonium)
-    echo "Plutonium game detected (${GAME_NAME}). Handing off to Plutonium entrypoint..."
-    exec "$SCRIPT_DIR/plutoentry.sh"
+  cod)
+    echo "Call of Duty game detected (${GAME_NAME}). Handing off to the CoD entrypoint..."
+    exec "$SCRIPT_DIR/games/codentry.sh"
     ;;
-  iw4x)
-    echo "IW4x game detected. Handing off to IW4x entrypoint..."
-    exec "$SCRIPT_DIR/iw4xentry.sh"
-    ;;
-  alterware)
-    echo "Alterware game detected (${GAME_NAME}). Handing off to Alterware entrypoint..."
-    exec "$SCRIPT_DIR/alterentry.sh"
-    ;;
-  cod4x)
-    echo "CoD4x game detected. Handing off to CoD4x entrypoint..."
-    exec "$SCRIPT_DIR/cod4xentry.sh"
+  steam)
+    echo "SteamCMD game detected (${GAME_NAME}). Handing off to the SteamCMD entrypoint..."
+    exec "$SCRIPT_DIR/games/steamentry.sh"
     ;;
 esac
+
+hold_indefinitely "No entry script is wired up for family '${GAME_TYPE}'. This is a bug in Plutainer."
