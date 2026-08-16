@@ -1,22 +1,35 @@
 #!/bin/bash
 #
-# Liveness check. Call of Duty servers use the Quake3 UDP status protocol;
-# 7 Days to Die uses a process plus TCP-listener check.
+# Liveness check. Healthy means the server named a map it is running — not
+# merely that a process exists or that a socket accepted a connection.
 #
-# Uses the unauthenticated `getstatus` query rather than RCON `status`. Both are
-# handled by the same connectionless-packet path inside the same server frame
-# loop, and both report the map from the same `mapname`/`sv_mapname` cvar, so a
-# soft-crash that stops the loop (or drops the map) fails this check exactly as
-# it failed the RCON one — no reply at all, or a reply with no map. What RCON
-# added was a credential dependency: a server with an empty `rcon_password`
-# (which is what every bundled seed config ships) could never report healthy,
-# no matter how well it was running.
+# Two protocols cover every family, chosen so the bar is the same for all of
+# them:
 #
-
+#   Quake3   Call of Duty engines. Unauthenticated `getstatus`, falling back to
+#            `getinfo`. Preferred over RCON `status` because both are handled by
+#            the same connectionless path in the same server frame loop and both
+#            read the map from the same cvar, so their failure detection is
+#            identical — while RCON additionally depends on rcon_password, which
+#            every bundled seed ships empty. A perfectly healthy first-run
+#            server could never have reported healthy.
+#
+#   A2S      SteamCMD games. Valve's A2S_INFO, the query behind the Steam server
+#            browser. Also unauthenticated, and it also reports a map, so
+#            "healthy" keeps meaning "actually serving" rather than degrading to
+#            "a TCP connect succeeded".
+#
+#   TCP      Last resort, for a game that speaks neither. It only proves
+#            something is listening, so it is a genuinely weaker check and no
+#            game currently selects it.
+#
+# Which one a game uses comes from its family table (STEAM_QUERY), not from a
+# branch here.
+#
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/game-config.sh"
+source "$SCRIPT_DIR/lib/core.sh"
 
 # --- Step 1: Detect Game Type ---
 echo "[INFO] Detecting server type..."
@@ -29,70 +42,82 @@ if [[ "${HEALTHCHECK_FLAG}" == "false" ]]; then
   exit 0
 fi
 
-# 7DTD is not a Quake-derived engine and does not answer getstatus/getinfo.
-# Its game port has a TCP listener, so require both the dedicated process and
-# a successful loopback connection. This catches a dead process and a server
-# that is still starting or has failed before binding its game socket.
-if [[ "$GAME_TYPE" == "7dtd" ]]; then
-  HEALTHCHECK_PORT=${CUSTOM_PORT}
-  if [[ -z "$HEALTHCHECK_PORT" ]]; then
-    config_path="$PLUTAINER_CONFIGS_DIR/${PLUTAINER_CONFIG_FILE:-serverconfig.xml}"
-    if [[ -f "$config_path" ]]; then
-      HEALTHCHECK_PORT=$(python3 - "$config_path" <<'PY'
-import re
-import sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as fh:
-    text = fh.read()
-match = re.search(
-    r'<property\s+name=["\']ServerPort["\']\s+value=["\'](\d+)["\']',
-    text,
-    re.IGNORECASE,
-)
-print(match.group(1) if match else "")
-PY
-      )
-    fi
-    if [[ -z "$HEALTHCHECK_PORT" ]]; then
-      resolve_default_port || exit 1
-      HEALTHCHECK_PORT="$DEFAULT_PORT"
-    fi
-  fi
-
-  pgrep -f '[/]7DaysToDieServer.x86_64' >/dev/null || {
-    echo "[ERROR] 7 Days to Die server process is not running." >&2
-    exit 1
-  }
-
-  python3 - "$HEALTHCHECK_PORT" <<'PY'
-import socket
-import sys
-
-port = int(sys.argv[1])
-with socket.create_connection(("127.0.0.1", port), timeout=5):
-    pass
-print(f"[OK] 7 Days to Die is accepting TCP connections on port {port}.")
-PY
-  exit $?
-fi
-
 # --- Step 3: Determine the correct port to check ---
-echo "[INFO] Determining server port..."
-HEALTHCHECK_PORT=${CUSTOM_PORT}
-if [[ -z "${HEALTHCHECK_PORT}" ]]; then
-  echo "       - Custom port is not set, determining default for game '${BASE_GAME}'..."
-  resolve_default_port || exit 1
-  HEALTHCHECK_PORT="${DEFAULT_PORT}"
-  echo "       - Default port set to ${HEALTHCHECK_PORT}."
-else
-  echo "       - Using custom port: ${HEALTHCHECK_PORT}."
-fi
+resolve_active_port || exit 1
+HEALTHCHECK_PORT="$ACTIVE_PORT"
+echo "[INFO] Server port: ${HEALTHCHECK_PORT}"
+
 
 # --- Step 4: Query the server ---
 echo "[INFO] Querying server at 127.0.0.1:${HEALTHCHECK_PORT}..."
-RESPONSE=$(python3 -c "
+
+# The cod family is always Quake3; the steam family names its query in the
+# table, because those games share no engine.
+HEALTHCHECK_QUERY="quake3"
+[[ "${GAME_TYPE}" == "steam" ]] && HEALTHCHECK_QUERY="${STEAM_QUERY}"
+
+if [[ "${HEALTHCHECK_QUERY}" == "a2s" ]]; then
+  QUERY_HOSTS="$(plutainer_query_hosts)"
+  RESPONSE=$(python3 -c "
 import sys
-import pyquake3
+sys.path.insert(0, '${SCRIPT_DIR}')
+from protocols import a2s
+
+# Source servers answer only on the container's own address, not on loopback.
+# See plutainer_query_hosts() in lib/core.sh.
+problems = []
+for host in '${QUERY_HOSTS}'.split():
+    try:
+        info = a2s.query_info(host, ${HEALTHCHECK_PORT}, timeout=2.0, retries=1)
+    except Exception as e:
+        problems.append('%s: %s' % (host, e))
+        continue
+
+    game_map = (info.get('map') or '').strip()
+    if not game_map:
+        problems.append('%s: answered A2S but named no map' % host)
+        continue
+
+    print('map: %s (%d/%d players, via A2S on %s)'
+          % (game_map, info['players'], info['max_players'], host))
+    sys.exit(0)
+
+print('; '.join(problems), file=sys.stderr)
+sys.exit(1)
+") || {
+    echo "[ERROR] Server did not report a loaded map on port ${HEALTHCHECK_PORT}." >&2
+    exit 1
+  }
+
+elif [[ "${HEALTHCHECK_QUERY}" == "tcp" ]]; then
+  QUERY_HOSTS="$(plutainer_query_hosts)"
+  RESPONSE=$(python3 -c "
+import socket
+import sys
+
+for host in '${QUERY_HOSTS}'.split():
+    try:
+        with socket.create_connection((host, ${HEALTHCHECK_PORT}), timeout=3):
+            pass
+    except Exception:
+        continue
+    # Deliberately not called 'map:' — this check cannot know one, and saying so
+    # keeps it honest against the other two.
+    print('accepting connections on %s' % host)
+    sys.exit(0)
+
+print('nothing accepted a connection', file=sys.stderr)
+sys.exit(1)
+") || {
+    echo "[ERROR] Nothing is listening on port ${HEALTHCHECK_PORT}." >&2
+    exit 1
+  }
+
+elif [[ "${HEALTHCHECK_QUERY}" == "quake3" ]]; then
+  RESPONSE=$(python3 -c "
+import sys
+sys.path.insert(0, '${SCRIPT_DIR}')
+from protocols import quake3
 
 # Engines disagree on the key's case: iw4x/t4/t5/t6 answer 'mapname', t7x
 # answers 'MapName'. Match case-insensitively rather than guessing per game.
@@ -105,7 +130,7 @@ MAP_KEYS = ('mapname', 'sv_mapname')
 #     would report the wrong map on a healthy server.
 QUERIES = ('getstatus', 'getinfo')
 
-server = pyquake3.PyQuake3('127.0.0.1:${HEALTHCHECK_PORT}')
+server = quake3.Quake3Server('127.0.0.1:${HEALTHCHECK_PORT}')
 
 problems = []
 for query in QUERIES:
@@ -125,17 +150,16 @@ for query in QUERIES:
 print('; '.join(problems), file=sys.stderr)
 sys.exit(1)
 ") || {
-  echo "[ERROR] Server did not report a loaded map on port ${HEALTHCHECK_PORT}." >&2
-  exit 1
-}
+    echo "[ERROR] Server did not report a loaded map on port ${HEALTHCHECK_PORT}." >&2
+    exit 1
+  }
 
-# --- Step 5: Validate the server's response ---
-echo "[INFO] Validating server response..."
-if echo "${RESPONSE}" | grep -q "map:"; then
-  echo "[OK] Health check passed: Server is responsive on port ${HEALTHCHECK_PORT} (${RESPONSE})."
-  exit 0
 else
-  echo "[ERROR] Server response did not contain 'map:'" >&2
-  echo "[ERROR] Received: ${RESPONSE}" >&2
+  echo "[ERROR] Unknown health check query '${HEALTHCHECK_QUERY}' for ${GAME_NAME}." >&2
+  echo "[ERROR] This is a bug in Plutainer's game table, not a configuration problem." >&2
   exit 1
 fi
+
+# --- Step 5: Report ---
+echo "[OK] Health check passed: ${GAME_NAME} is responsive on port ${HEALTHCHECK_PORT} (${RESPONSE})."
+exit 0

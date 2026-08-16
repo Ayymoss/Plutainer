@@ -1,102 +1,219 @@
 #!/usr/bin/env python3
 """
-rcon-cli — Interactive and one-shot RCON client for Plutainer.
+rcon-cli — interactive and one-shot remote console for Plutainer.
 
 Usage:
-  docker exec -i <container> rcon-cli          # interactive mode
-  docker exec <container> rcon-cli <command>   # one-shot mode
+  docker exec -i <container> rcon-cli          # interactive
+  docker exec <container> rcon-cli <command>   # one-shot
+
+"RCON" is the name people search for, so the command keeps it, but the protocol
+underneath depends on the game: Quake3 RCON over UDP for the Call of Duty
+families, Valve's RCON over TCP for Source games, a telnet console for 7 Days to
+Die. The shell library decides which; this script only speaks them.
 """
 
 import os
 import subprocess
 import sys
 
-# Resolve symlinks so SCRIPT_DIR points to the real location,
-# not the symlink's directory (e.g. /usr/local/bin/)
+# Resolve symlinks so SCRIPT_DIR points at the real location rather than the
+# symlink's directory (this is linked into /usr/local/bin).
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-import pyquake3
 
-
-def resolve_config():
-    """Call game-config.sh to resolve port, config path, and RCON password."""
+def resolve_endpoint():
+    """Ask the shell library how to reach this game's console."""
     script = f"""
-        source "{SCRIPT_DIR}/game-config.sh"
+        source "{SCRIPT_DIR}/lib/core.sh"
         detect_game_type || exit 1
-        ACTIVE_PORT="${{CUSTOM_PORT}}"
-        if [[ -z "$ACTIVE_PORT" ]]; then
-            resolve_default_port || exit 1
-            ACTIVE_PORT="${{DEFAULT_PORT}}"
-        fi
-        resolve_config_path || exit 1
-        extract_rcon_password || exit 1
-        echo "$ACTIVE_PORT"
-        echo "$CONFIG_PATH"
-        echo "$RCON_PASSWORD"
+        resolve_admin_endpoint || exit 1
         echo "$GAME_NAME"
         echo "$GAME_TYPE"
+        echo "$ADMIN_PROTOCOL"
+        echo "$ADMIN_PORT"
+        echo "$ADMIN_PASSWORD"
+        echo "${{ADMIN_DISABLED_HINT:-}}"
+        echo "$ADMIN_HOSTS"
     """
-    result = subprocess.run(
-        ["bash", "-c", script],
-        capture_output=True,
-        text=True,
-    )
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
     if result.returncode != 0:
         print(result.stderr.strip(), file=sys.stderr)
         sys.exit(1)
 
-    lines = result.stdout.strip().split("\n")
-    if len(lines) < 5:
-        print("Error: Failed to resolve game configuration.", file=sys.stderr)
+    lines = result.stdout.split("\n")
+    if len(lines) < 7:
+        print("Error: failed to resolve the server's console endpoint.", file=sys.stderr)
+        if result.stderr.strip():
+            print(result.stderr.strip(), file=sys.stderr)
         sys.exit(1)
 
     return {
-        "port": int(lines[0]),
-        "config_path": lines[1],
-        "rcon_password": lines[2],
-        "game_name": lines[3],
-        "game_type": lines[4],
+        "game_name": lines[0].strip(),
+        "game_type": lines[1].strip(),
+        "protocol": lines[2].strip(),
+        "port": lines[3].strip(),
+        "password": lines[4],
+        "hint": lines[5].strip(),
+        # Source servers answer only on the container's own address; everything
+        # else answers on loopback. Try in order rather than encoding which.
+        "hosts": lines[6].split() or ["127.0.0.1"],
     }
 
 
-def send_command(server, cmd):
-    try:
-        _, response = server.rcon(cmd)
-        print(response.strip())
-    except Exception as e:
-        print(f"RCON error: {e}", file=sys.stderr)
+# --- one class per protocol, same three methods -----------------------------
+
+
+class Quake3Client:
+    """CoD families. Connectionless UDP; every command is its own packet."""
+
+    def __init__(self, cfg):
+        from protocols import quake3
+
+        if not cfg["password"]:
+            raise SystemExit(
+                "No rcon_password is set in this server's config, so RCON is disabled.\n"
+                "Set PLUTAINER_RCON_PASSWORD and restart, or add the line yourself."
+            )
+        self.server = quake3.Quake3Server(
+            "127.0.0.1:%s" % cfg["port"], rcon_password=cfg["password"]
+        )
+
+    def open(self):
+        pass
+
+    def send(self, cmd):
+        _kind, response = self.server.rcon(cmd)
+        return response.strip()
+
+    def close(self):
+        pass
+
+
+class SourceRconClient:
+    """Source games. Stateful TCP session, so the connection is held open."""
+
+    def __init__(self, cfg):
+        from protocols import source_rcon
+
+        self.hosts = cfg["hosts"]
+        self.port = cfg["port"]
+        self.password = cfg["password"]
+        self.module = source_rcon
+        self.conn = None
+
+    def open(self):
+        self.conn = _first_reachable(
+            self.hosts,
+            lambda host: self.module.SourceRcon(host, self.port, self.password),
+        )
+
+    def send(self, cmd):
+        return self.conn.command(cmd).strip()
+
+    def close(self):
+        if self.conn is not None:
+            self.conn.close()
+
+
+class TelnetClient:
+    """7 Days to Die. Console stream; a reply is whatever arrives next."""
+
+    def __init__(self, cfg):
+        from protocols import telnet_admin
+
+        self.hosts = cfg["hosts"]
+        self.port = cfg["port"]
+        self.password = cfg["password"]
+        self.module = telnet_admin
+        self.conn = None
+
+    def open(self):
+        self.conn = _first_reachable(
+            self.hosts,
+            lambda host: self.module.TelnetAdmin(host, self.port, self.password),
+        )
+
+    def send(self, cmd):
+        return self.conn.command(cmd).strip()
+
+    def close(self):
+        if self.conn is not None:
+            self.conn.close()
+
+
+def _first_reachable(hosts, build):
+    """Connect to the first host that answers, else raise the last error."""
+    last = None
+    for host in hosts:
+        conn = build(host)
+        try:
+            conn.connect()
+            return conn
+        except Exception as err:
+            last = err
+    raise last or OSError("no address answered")
+
+
+CLIENTS = {
+    "quake3": Quake3Client,
+    "source-rcon": SourceRconClient,
+    "telnet": TelnetClient,
+}
+
+
+def build_client(cfg):
+    protocol = cfg["protocol"]
+
+    if protocol == "disabled":
+        raise SystemExit(
+            "%s has a remote console, but it is turned off in this server's config.\n%s"
+            % (cfg["game_name"], cfg["hint"] or "")
+        )
+    if protocol == "none" or protocol not in CLIENTS:
+        raise SystemExit(
+            "%s has no remote console that Plutainer can talk to." % cfg["game_name"]
+        )
+    return CLIENTS[protocol](cfg)
 
 
 def main():
-    config = resolve_config()
-    port = config["port"]
-    server = pyquake3.PyQuake3(f"127.0.0.1:{port}", rcon_password=config["rcon_password"])
+    cfg = resolve_endpoint()
+    client = build_client(cfg)
 
-    # One-shot mode: arguments are the command
-    if len(sys.argv) > 1:
-        cmd = " ".join(sys.argv[1:])
-        send_command(server, cmd)
-        return
-
-    # Interactive mode
-    print(f"Connected to {config['game_name']} ({config['game_type']}) at 127.0.0.1:{port}")
-    print("Type 'quit' or 'exit' to close. Ctrl+C also works.")
-    print()
     try:
+        client.open()
+    except Exception as err:
+        raise SystemExit("Could not open the console: %s" % err)
+
+    try:
+        # One-shot: everything after the program name is the command.
+        if len(sys.argv) > 1:
+            print(client.send(" ".join(sys.argv[1:])))
+            return
+
+        print(
+            "Connected to %s (%s, %s) on port %s"
+            % (cfg["game_name"], cfg["game_type"], cfg["protocol"], cfg["port"])
+        )
+        print("Type 'quit' or 'exit' to close. Ctrl+C also works.")
+        print()
         while True:
             try:
-                cmd = input("> ")
-            except EOFError:
+                cmd = input("> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
                 break
-            cmd = cmd.strip()
             if not cmd:
                 continue
             if cmd.lower() in ("quit", "exit"):
                 break
-            send_command(server, cmd)
-    except KeyboardInterrupt:
-        print()
+            try:
+                print(client.send(cmd))
+            except Exception as err:
+                print("Console error: %s" % err, file=sys.stderr)
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":
