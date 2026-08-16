@@ -34,7 +34,6 @@ on:
       - 'CLAUDE.md'
       - 'LICENSE'
       - '.dockerignore'
-      - 'EXAMPLE-docker-compose.yml'
   release:
     types: [published]
   # The GHA cache evicts after 7 idle days, and a cold arm64 job has to compile
