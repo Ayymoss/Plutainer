@@ -2,13 +2,19 @@
 
 ## What "healthy" means
 
-For Call of Duty engines, Plutainer asks the server for its status and requires it to **name a loaded map**. For 7 Days to Die, it requires the dedicated process and a successful TCP connection to the configured game port.
+Plutainer asks the server for its status and requires it to **name a loaded map**. A container is healthy only when the game is genuinely serving — not merely when the process is alive or a socket accepted a connection.
+
+That bar is the same for every game; only the query differs.
 
 1. Work out the game and port.
-2. Send an unauthenticated `getstatus` to `127.0.0.1`, falling back to `getinfo`.
+2. Query it, unauthenticated:
+   - **Call of Duty engines** — Quake3 `getstatus`, falling back to `getinfo`.
+   - **SteamCMD games** — Valve's `A2S_INFO`, the query behind the Steam server browser.
 3. Require a map name in the reply.
 
-The 7DTD branch instead checks `7DaysToDieServer.x86_64` and connects to `127.0.0.1:<game port>`; it does not speak the Quake status protocol.
+Both queries are unauthenticated on purpose. RCON would work too, but it depends on `rcon_password`, and every seeded config ships that empty — so a perfectly healthy first-run server could never report healthy.
+
+The address is tried as `127.0.0.1` first, then the container's own IP. Source dedicated servers answer only on the latter: an identical A2S query times out on loopback and replies immediately on the container address, with the server healthy throughout.
 
 ```
 [OK] Health check passed: Server is responsive on port 4976 (map: zm_buried (via getstatus)).
@@ -22,7 +28,7 @@ Disable with `PLUTAINER_HEALTHCHECK=false`.
 
 ### Start period
 
-The healthcheck allows **five minutes** before failures count, because a first start downloads a lot (including the full 7DTD dedicated server through SteamCMD). During that window `docker ps` shows `starting`.
+The healthcheck allows **five minutes** before failures count, because a first start downloads a lot (IW4x 1–2 GB, Plutonium ~500 MB, 7DTD ~17 GB through SteamCMD). During that window `docker ps` shows `starting`. A first 7DTD start will exceed five minutes on a slow connection; it shows `unhealthy` until the download finishes and then recovers on its own.
 
 ## Restart behaviour
 
@@ -34,7 +40,16 @@ No restart loop, no log spam burying the error. Fix it and `docker restart <cont
 
 **Runtime crashes** — the game exits on its own. Plutainer waits **30 seconds**, then exits with the game's code, letting your `restart:` policy take over. That throttles a crash loop to roughly one restart per 30s instead of hammering.
 
-Docker sends `SIGTERM` to Plutainer's launch wrapper. Call of Duty families retain their immediate-stop behaviour. For 7DTD, the wrapper forwards the signal to the native server and waits for its `ServerShutdown` save path to finish; its Compose example allows a two-minute grace period. Docker still force-kills the container if that timeout expires.
+`STOPSIGNAL` is `SIGKILL`, so `docker stop` is instant. That is right for the Call of Duty engines, which have no state to flush.
+
+A game that *does* — a world to save — opts in per service, because `SIGKILL` cannot be trapped by anything:
+
+```yaml
+    stop_signal: SIGTERM
+    stop_grace_period: 90s
+```
+
+Plutainer then forwards the signal and waits. Docker sends `SIGKILL` itself when the grace period expires, so a server that ignores `SIGTERM` still cannot wedge a stop.
 
 ## Auto-restarting unhealthy servers
 

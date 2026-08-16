@@ -11,7 +11,7 @@ Where everything lives, and why your configs are in one folder instead of scatte
 
 The gamefiles mount is read-only and shareable — point ten servers at the same copy. Anything an updater downloads goes into `app/` instead, so don't stage binaries in the gamefiles mount.
 
-7 Days to Die does not use `/home/plutainer/gamefiles`; SteamCMD installs it under the app volume instead.
+The SteamCMD games (`7dtd`, `hl2dm`) do not use `/home/plutainer/gamefiles` at all; SteamCMD installs them under the app volume instead.
 
 ## What appears in `app/`
 
@@ -24,8 +24,8 @@ app/
   runtime/
     gamefiles/        ← symlinks into your read-only mount + writable game state
     plutonium/        ← Plutonium binaries and storage
-    7dtd/             ← SteamCMD-managed dedicated server (7DTD only)
-    7dtd-data/        ← worlds, saves, and server log (7DTD only)
+    steam/<game>/     ← SteamCMD-managed install (SteamCMD games)
+    gamedata/<game>/  ← worlds, saves, logs (SteamCMD games)
   .plutainer-version  ← layout marker
 ```
 

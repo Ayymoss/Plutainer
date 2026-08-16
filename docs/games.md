@@ -13,7 +13,10 @@ What each game needs from you, and what Plutainer supplies. Find your game, chec
 | Modern Warfare 2 | `iw4x` | no | 28960 | `server.cfg`, `serverlan.cfg`, `partyserver.cfg`, `partyserverlan.cfg` |
 | Black Ops III | `t7x` | no | 27017 | `server.cfg`, `server_zm.cfg`, `server_cp.cfg` |
 | Modern Warfare | `cod4x` | token, to be listed | 28960 | `server.cfg` |
-| 7 Days to Die | `7dtd` | no | 26900 | `serverconfig.xml` from the Steam depot |
+| 7 Days to Die | `7dtd` | no | 26900 | `serverconfig.xml`, from the installed server |
+| Counter-Strike 2 | `cs2` | token, to be listed | 27015 | `server.cfg` |
+| Left 4 Dead 2 | `l4d2` | no | 27015 | `server.cfg` |
+| Half-Life 2: Deathmatch | `hl2dm` | no | 27015 | `server.cfg` |
 
 `PLUTAINER_CONFIG_FILE` must name one of the seeded files, or a config you place in `app/configs/` yourself. Get it wrong and the container refuses to start with a hint listing what it found — including case-only mismatches like `Server.cfg` vs `server.cfg`.
 
@@ -23,7 +26,7 @@ The `sp` tags are how Plutonium runs zombies/co-op: **T4 zombies is `t4sp`** wit
 
 Mounted read-only at `/home/plutainer/gamefiles`. One copy can be shared by any number of servers.
 
-**7 Days to Die is the exception:** do not mount game files. Plutainer installs the official dedicated server anonymously through SteamCMD into `app/runtime/7dtd/` and keeps world data in `app/runtime/7dtd-data/`.
+**The SteamCMD games are the exception:** do not mount game files for `7dtd` or `hl2dm`. Plutainer installs those servers anonymously through SteamCMD into `app/runtime/steam/<game>/`, and keeps everything you care about — worlds, saves, logs — in `app/runtime/gamedata/<game>/`, where a Steam update cannot reach it.
 
 ### Plutonium (T4, T5, T6, IW5)
 
@@ -51,19 +54,52 @@ Plutainer ships the server binary and the two assets a stock install lacks — `
 
 ## Per-game notes
 
-### 7 Days to Die
+### The SteamCMD games (7DTD, CS2, L4D2, HL2:DM)
 
-Use `PLUTAINER_GAME=7dtd`. On first start SteamCMD downloads dedicated-server app `294420`; later starts update it unless `PLUTAINER_AUTO_UPDATE=false`. The current depot's `serverconfig.xml` is copied to `app/configs/serverconfig.xml` only when that file does not already exist, so your edits persist.
+These work differently enough from the Call of Duty families to be worth reading once.
 
-Allow roughly 15 GB of persistent storage for the Linux depot, plus additional space for generated worlds, saves, and mods.
+**You supply nothing.** No gamefiles mount, no Steam account, no key. SteamCMD downloads the dedicated server anonymously on first start and updates it on later starts, unless `PLUTAINER_AUTO_UPDATE=false`.
 
-`PLUTAINER_PORT` updates the XML `ServerPort` property at startup. Publish that port as TCP and UDP, plus the following three UDP ports. For the default this is TCP `26900` and UDP `26900-26903`.
+**Two directories, and the split matters.** The install goes in `app/runtime/steam/<game>/` and SteamCMD owns it — it may replace anything in there on an update. Everything you would be upset to lose (worlds, saves, logs) is kept in `app/runtime/gamedata/<game>/`, which SteamCMD never touches. Your config stays in `app/configs/` like every other game.
 
-No gamefiles mount, Steam account, or game key is required. The server is amd64-only. Plutainer's Quake RCON client does not apply to 7DTD; use the game's own telnet/web administration options configured in `serverconfig.xml`.
+**Budget the disk, seriously.** CS2 is **67 GB** installed, 7DTD roughly 17 GB, L4D2 9.2 GB, HL2:DM about 6 GB. First start is almost entirely download, and CS2's will exceed the health check's five-minute grace period — the container shows `unhealthy` while it works, then recovers by itself. Watch `docker logs -f`, not `docker ps`.
 
-On container stop, Plutainer forwards `SIGTERM` to the native Linux server and waits while its `ServerShutdown` path saves the world and exits. Set `stop_grace_period: 2m` as shown in the Compose example; Docker's stop timeout remains the hard limit if the game hangs.
+**They are amd64-only**, because SteamCMD ships x86_64 binaries only. The arm64 image refuses with an explanation rather than failing obscurely.
 
-`PLUTAINER_USE_RAW_CONFIGS` and `PLUTAINER_MOD` do not apply. Put server mods in `app/runtime/7dtd/Mods/` so SteamCMD leaves them alongside the persistent installation.
+**Clean shutdown is opt-in, per service.** The image's stop signal is `SIGKILL`, which is right for the Call of Duty engines — they have nothing to flush. A game with world state does have something to lose, so ask for `SIGTERM` in your compose file:
+
+```yaml
+    stop_signal: SIGTERM
+    stop_grace_period: 90s
+```
+
+Plutainer then forwards the signal and waits for the server to save and exit. Measured on 7DTD: 3.5 s, exit code 0, save files written at stop. Without those two lines the container still stops correctly — instantly — just without the clean save. `stop_grace_period` is the hard limit either way: Docker sends `SIGKILL` itself when it expires, so a hung server cannot wedge a stop.
+
+#### 7 Days to Die (`7dtd`)
+
+Steam app `294420`. Config is `serverconfig.xml`, copied out of the installed server's own template on first start and never overwritten afterwards.
+
+`PLUTAINER_PORT` and `PLUTAINER_SERVER_NAME` are written into the XML (`ServerPort`, `ServerName`) because that is where 7DTD reads them. Publish the port as TCP and UDP plus the next three UDP ports — for the default, TCP `26900` and UDP `26900-26903`.
+
+Administration is 7DTD's telnet console, not RCON. `PLUTAINER_RCON_PASSWORD` sets `TelnetPassword` and switches `TelnetEnabled` on, after which `rcon-cli` works normally.
+
+`PLUTAINER_USE_RAW_CONFIGS` and `PLUTAINER_MOD` do not apply. Put server mods in `app/runtime/steam/7dtd/Mods/`.
+
+#### The Source games (`cs2`, `l4d2`, `hl2dm`)
+
+Ordinary `srcds` dedicated servers, and they behave identically: Plutainer seeds a minimal `server.cfg` and symlinks it into the install so your edits survive Steam updates. `PLUTAINER_SERVER_NAME` sets `hostname`, `PLUTAINER_RCON_PASSWORD` sets `rcon_password`, and `PLUTAINER_MAX_CLIENTS` / `PLUTAINER_START_MAP` control slots and the boot map. Administration is Valve's RCON over TCP on the game port.
+
+Adding another Source game — Day of Defeat, TF2, Garry's Mod — is a table row in `scripts/lib/steam.sh` plus four one-line hooks, not new code.
+
+**Plutainer takes over the depot's own `server.cfg`.** Several of these ship a stub config in the install directory; CS2's is 33 bytes reading `// Defaults in server_default.cfg`. Yours from `app/configs/` replaces it, and the original is kept beside it as `server.cfg.depot-original`. Without this the server would quietly run on stock settings while your config sat there looking correct.
+
+**CS2 specifics.** Set `PLUTAINER_CS2_GSLT` to a Game Server Login Token from <https://steamcommunity.com/dev/managegameservers> — same role as CoD4x's masterserver token: without it the server runs and accepts direct connections but never shows up in the browser. RCON needs no extra setup; Plutainer passes `-usercon` (CS2 refuses every RCON connection without it, regardless of password) and supplies the password on the command line as well as in your config, because CS2 starts RCON before it execs `server.cfg`.
+
+One thing to know: `+game_alias competitive` makes CS2 exec its own `gamemode_competitive.cfg` *after* your `server.cfg`, so a handful of cvars that gamemode file also sets — `bot_quota` is the usual one — will be overridden. That is stock Source behaviour, not Plutainer. Change the mode with `PLUTAINER_CS2_GAME_ALIAS`, or edit the gamemode file in the install directly.
+
+**L4D2 needs a two-phase install, and Plutainer does it for you.** Valve restricted anonymous Linux installation of app `222860`: every depot, *including the 9.5 GB content one*, is flagged `windows`, so a plain `app_update` on Linux fails with `Invalid platform`. This is an open Valve-side issue ([steam-for-linux#11522](https://github.com/ValveSoftware/steam-for-linux/issues/11522)) that also breaks [LinuxGSM](https://github.com/GameServerManagers/LinuxGSM/issues/4754), so if you have run L4D2 on Linux before and it stopped working, this is why.
+
+The fix is to pull the content as Windows and then re-run the update as Linux, which overlays the native binaries depot on top. Plutainer expresses that as `STEAM_INSTALL_PLATFORMS="windows linux"` in the game table. The result is a genuinely native server — `srcds_linux`, no Wine, no Steam account — that reports `os: Linux Dedicated`. It costs ~9.2 GB and a longer first start, since the Windows content is downloaded before the Linux binaries land on top.
 
 ### T5 (Black Ops)
 
@@ -118,7 +154,7 @@ Upstream ships `sv_maprotation` commented out, which would leave `+map_rotate` w
 
 - **IW4x does not work on arm64.** Upstream publishes `x86_64` binaries only, so the arm64 image builds the launcher from source, and that build is currently broken ([iw4x/launcher#76](https://github.com/iw4x/launcher/issues/76)). It refuses to start and says why. It will work again automatically once upstream builds.
 - **CoD4x is amd64-only, permanently.** Its server is a 32-bit x86 Linux binary, which cannot execute on arm64 at all.
-- **7 Days to Die is amd64-only.** SteamCMD and the official native Linux dedicated server are x86 binaries; the arm64 image deliberately refuses with an explanation.
+- **The SteamCMD games are amd64-only.** SteamCMD ships x86_64 binaries only, so the arm64 image carries no copy of it and refuses with an explanation. It is a capability check, not an architecture check: the day an arm64 SteamCMD exists, this starts working with no code change.
 
 Plutonium and T7x work on both. If an arm64 build fails outright, `:latest` publishes amd64-only rather than being held back — check with `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` before upgrading an arm64 host.
 

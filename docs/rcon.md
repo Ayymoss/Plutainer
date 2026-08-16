@@ -1,8 +1,16 @@
 # RCON
 
-This page applies to the Call of Duty engines. 7 Days to Die uses its own telnet/web administration configured in `serverconfig.xml`; Plutainer's `rcon-cli` does not support it.
-
 Sending commands to a running server.
+
+`rcon-cli` works on every game, but the protocol underneath differs — it picks the right one for you:
+
+| Game | Protocol | Port | Password comes from |
+| --- | --- | --- | --- |
+| Plutonium, IW4x, T7x, CoD4x | Quake3 RCON (UDP) | game port | `rcon_password` in your cfg |
+| Half-Life 2: Deathmatch | Source RCON (TCP) | game port | `rcon_password` in your cfg |
+| 7 Days to Die | Telnet console (TCP) | `TelnetPort`, default 8081 | `TelnetPassword` in `serverconfig.xml` |
+
+Setting `PLUTAINER_RCON_PASSWORD` fills in the right field for the game, whichever it is. On 7DTD it also switches `TelnetEnabled` on, since the console is off by default.
 
 ## Set a password first
 

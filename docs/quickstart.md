@@ -7,11 +7,11 @@ Getting one server running, start to finish. Budget ten minutes, most of it wait
 You need three things:
 
 1. **Docker and Docker Compose** on a Linux host.
-2. **The base game files**, which you must own for the Call of Duty engines. 7DTD is installed automatically with SteamCMD and needs no gamefiles mount. What exactly each game needs is in [Games](games.md).
+2. **The base game files**, which you must own — for the Call of Duty engines. The SteamCMD games (`7dtd`, `hl2dm`) install themselves and need no gamefiles mount. What exactly each game needs is in [Games](games.md).
 3. **A server key or token**, depending on the game:
    - **T4, T5, T6, IW5** need a Plutonium server key, free from <https://platform.plutonium.pw/serverkeys>. The server will not start without one.
    - **CoD4x** needs a masterserver token from <http://cod4master.cod4x.ovh> to be listed in the server browser. It runs without one, but nobody will find it.
-   - **IW4x, T7x, and 7DTD** need no key or token.
+   - **IW4x, T7x and the SteamCMD games** need no key or token.
 
 ## 1. Put the game files somewhere
 
@@ -23,7 +23,7 @@ Anywhere on the host. They're mounted read-only, so they can be shared by as man
   IW4xServerFiles/
 ```
 
-Skip this step for 7 Days to Die.
+Skip this step for the SteamCMD games (`7dtd`, `hl2dm`).
 
 ## 2. Write a compose file
 
@@ -53,7 +53,7 @@ Four settings matter:
 | --- | --- |
 | `PLUTAINER_GAME` | Which game. [Full list](games.md) |
 | `PLUTAINER_CONFIG_FILE` | Which config to run. **Must be one Plutainer seeds** unless you supply your own — [names per game](games.md) |
-| the gamefiles mount | Your base game files, read-only (not used by 7DTD) |
+| the gamefiles mount | Your base game files, read-only (not used by the SteamCMD games) |
 | the app mount | Where server data, configs and logs live |
 
 Put the key in a `.env` file next to your compose file so it stays out of the compose:
@@ -69,7 +69,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-**First start takes a while.** Plutonium downloads ~500 MB, IW4x 1–2 GB, and 7DTD downloads its full dedicated-server depot. CoD4x is ready in under a minute since everything ships in the image. The healthcheck allows five minutes before it starts judging.
+**First start takes a while.** Plutonium downloads ~500 MB, IW4x 1–2 GB, 7DTD about 17 GB. CoD4x is ready in under a minute since everything ships in the image. The healthcheck allows five minutes before it starts judging.
 
 ## 4. Check it worked
 
@@ -77,7 +77,7 @@ docker compose logs -f
 docker ps
 ```
 
-`healthy` means a Call of Duty server answered a status query and reported a loaded map, or that 7DTD's process is running and its game port accepts TCP connections. If it says `unhealthy` or never leaves `starting`, go to [Troubleshooting](troubleshooting.md).
+`healthy` means the server answered a status query and reported a loaded map — it's genuinely up, not just running. If it says `unhealthy` or never leaves `starting`, go to [Troubleshooting](troubleshooting.md).
 
 ## 5. Edit your config
 
