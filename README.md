@@ -30,8 +30,7 @@ services:
 | Black Ops II (T6) | `t6mp`, `t6zm` | Plutonium. Needs a server key |
 | Modern Warfare 3 (IW5) | `iw5mp` | Plutonium. Needs a server key |
 | Modern Warfare 2 (IW4x) | `iw4x` | No key. amd64 only |
-| Black Ops III (T7x) | `t7x` | No key |
-| Black Ops III (BOIII) | `boiii` | No key. Same game files as `t7x` |
+| Black Ops III | `boiii` | Ezz BOIII. No key |
 | Modern Warfare (CoD4x) | `cod4x` | Multiplayer only, amd64 only. Needs a [masterserver token](docs/games.md#cod4x-modern-warfare) to appear in the server browser |
 | 7 Days to Die | `7dtd` | Native Linux server, amd64 only. Installed by SteamCMD; no gamefiles mount |
 | Counter-Strike 2 | `cs2` | Source 2, amd64 only. Installed by SteamCMD; ~67 GB. Needs a [GSLT](docs/games.md#the-source-games-cs2-l4d2-hl2dm) to be listed |
@@ -58,7 +57,7 @@ Image: `ghcr.io/ayymoss/plutainer:latest` — multi-arch (amd64 + arm64), with [
 ## What Plutainer does for you
 
 - **Writes a working config on first start.** Community defaults are seeded into `app/configs/`, and never overwrite files you've edited.
-- **Fetches the server binaries.** Plutonium, IW4x and T7x updaters run at startup; CoD4x ships in the image; the SteamCMD games install themselves. You supply base game files only for the games that need them.
+- **Fetches the server binaries.** Plutonium, IW4x and BOIII updaters run at startup; CoD4x ships in the image; the SteamCMD games install themselves. You supply base game files only for the games that need them.
 - **Puts every config in one folder.** Edit `app/configs/whatever.cfg`; Plutainer symlinks it to wherever the engine expects it.
 - **Keeps logs findable.** `app/logs/` holds stable symlinks to the active log files, wherever the game moved them.
 - **Fails loudly, not endlessly.** A misconfiguration holds the container in `Up` with a readable error instead of a restart loop.

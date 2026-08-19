@@ -95,7 +95,7 @@ In `IW4MAdmin/Configuration/IW4MAdminSettings.json`. Address the servers by your
 | T6 MP / ZM | `Plutonium T6 Parser (2024)` | `games_mp.log` / `games_zm.log` |
 | IW5 | `Plutonium IW5 Parser` | `games_mp.log` |
 | IW4x | `IW4x Parser` | `games_mp.log` |
-| T7x | `BOIII Parser` | `games_mp.log` / `games_zm.log` |
+| BOIII | `BOIII Parser` | `games_mp.log` / `games_zm.log` |
 | CoD4x | `CoD4x Parser` | `games_mp.log` |
 
 IW4MAdmin needs a pre-existing `IW4MAdminSettings.json` before its container will start — it won't generate one unattended.
@@ -162,7 +162,7 @@ environment:
 
 `PLUTAINER_RCON_WHITELIST_GATEWAY=false` disables the automatic entry. Note that any whitelist entry makes the whitelist non-empty, restricting T5/T6 RCON to the listed addresses plus loopback — the posture upstream's placeholder entries intended.
 
-T4, IW5, IW4x, T7x and CoD4x answer queries regardless and get no whitelist entries.
+T4, IW5, IW4x, BOIII and CoD4x answer queries regardless and get no whitelist entries.
 
 ## Networking
 

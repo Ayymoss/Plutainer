@@ -119,13 +119,13 @@ import sys
 sys.path.insert(0, '${SCRIPT_DIR}')
 from protocols import quake3
 
-# Engines disagree on the key's case: iw4x/t4/t5/t6 answer 'mapname', t7x
+# Engines disagree on the key's case: iw4x/t4/t5/t6 answer 'mapname', BO3
 # answers 'MapName'. Match case-insensitively rather than guessing per game.
 MAP_KEYS = ('mapname', 'sv_mapname')
 
 # getstatus first, getinfo second, and the order matters both ways:
 #   * IW5 (MW3) does not answer getstatus at all — only getinfo.
-#   * T7x answers both, but its infoResponse advertises the lobby's map while
+#   * BO3 answers both, but its infoResponse advertises the lobby's map while
 #     statusResponse reports the map actually running, so preferring getinfo
 #     would report the wrong map on a healthy server.
 QUERIES = ('getstatus', 'getinfo')

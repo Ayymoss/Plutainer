@@ -6,7 +6,7 @@
 # There are exactly two families, and they are *platforms* rather than engines:
 #
 #   cod     Quake-derived servers Plutainer installs and runs itself
-#           (Plutonium, IW4x, T7x, BOIII, CoD4x). You supply the game files.
+#           (Plutonium, IW4x, Ezz BOIII, CoD4x). You supply the game files.
 #   steam   Servers SteamCMD installs (7DTD, CS2, L4D2, HL2:DM). You supply
 #           nothing.
 #
@@ -219,17 +219,34 @@ plutainer_require_hooks() {
   return 1
 }
 
+# A tag that used to work is not the same as one that never did, and the
+# difference is the whole message: "unknown" sends someone hunting for a typo.
+# Returns 0 when it recognised and explained the tag.
+plutainer_explain_retired_game() {
+  case "$1" in
+    t7x)
+      echo "[ERROR] 't7x' is no longer supported. Black Ops III is served by" >&2
+      echo "        Ezz BOIII now: set PLUTAINER_GAME=boiii." >&2
+      echo "        Nothing else changes — same gamefiles mount, same" >&2
+      echo "        app/configs/, same zone/ config directory." >&2
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 # Populate GAME_TYPE, GAME_NAME, BASE_GAME, CONFIG_FILE, CUSTOM_PORT,
 # HEALTHCHECK_FLAG from PLUTAINER_*.
 detect_game_type() {
   if [[ -z "${PLUTAINER_GAME:-}" ]]; then
-    echo "[ERROR] No game specified. Set PLUTAINER_GAME (e.g. t6zm, iw4x, t7x)." >&2
+    echo "[ERROR] No game specified. Set PLUTAINER_GAME (e.g. t6zm, iw4x, boiii)." >&2
     return 1
   fi
 
   GAME_NAME="${PLUTAINER_GAME}"
   GAME_TYPE="$(derive_family "$GAME_NAME")" || {
-    echo "[ERROR] Unknown PLUTAINER_GAME value: '${GAME_NAME}'." >&2
+    plutainer_explain_retired_game "$GAME_NAME" ||
+      echo "[ERROR] Unknown PLUTAINER_GAME value: '${GAME_NAME}'." >&2
     return 1
   }
 
@@ -460,7 +477,7 @@ PATH B — Migrate to v2 (recommended)
        IW4X_AUTO_UPDATE    → PLUTAINER_AUTO_UPDATE
        IW4X_SERVER_NAME    → PLUTAINER_SERVER_NAME
        IW4X_EXTRA_ARGS     → PLUTAINER_EXTRA_ARGS
-       ALTER_GAME          → PLUTAINER_GAME (e.g. t7x)
+       ALTER_GAME          → PLUTAINER_GAME (now boiii)
        ALTER_CONFIG_FILE   → PLUTAINER_CONFIG_FILE
        ALTER_PORT          → PLUTAINER_PORT
        ALTER_HEALTHCHECK   → PLUTAINER_HEALTHCHECK

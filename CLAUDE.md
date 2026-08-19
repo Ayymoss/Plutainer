@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Plutainer is a Docker image for running Plutonium, IW4x, T7x, BOIII and CoD4x dedicated game servers (Call of Duty titles: T4/WaW, T5/BO1, T6/BO2, IW5/MW3, IW4x/MW2, T7x and BOIII for BO3, CoD4x/CoD4). It uses Wine on Arch Linux to run the Windows game server binaries, configured entirely via environment variables. CoD4x is the exception: upstream ships a native Linux server, so it runs directly with no Wine (and is therefore amd64-only — the binary is 32-bit x86).
+Plutainer is a Docker image for running Plutonium, IW4x, Ezz BOIII and CoD4x dedicated game servers (Call of Duty titles: T4/WaW, T5/BO1, T6/BO2, IW5/MW3, IW4x/MW2, BOIII/BO3, CoD4x/CoD4). It uses Wine on Arch Linux to run the Windows game server binaries, configured entirely via environment variables. CoD4x is the exception: upstream ships a native Linux server, so it runs directly with no Wine (and is therefore amd64-only — the binary is 32-bit x86).
 
 ## Documentation layout
 
@@ -61,9 +61,9 @@ Tag logic lives in `metadata-action` in the `merge` job.
 
 amd64 is required. **arm64 is best-effort** (`optional: true` + `continue-on-error` in the build matrix): if it fails, amd64 still publishes and `merge` emits a `::warning::` and job-summary note. Only a missing *amd64* digest blocks a publish.
 
-`iw4x/launcher` publishes `x86_64` binaries only, so `Dockerfile` downloads the prebuilt binary while `Dockerfile.arm64` compiles it, and the build2 toolchain, from source. `cpp-builder` exists solely for that; everything else arm64 needs (Wine, `plutonium-updater`, the T7x path) builds fine.
+`iw4x/launcher` publishes `x86_64` binaries only, so `Dockerfile` downloads the prebuilt binary while `Dockerfile.arm64` compiles it, and the build2 toolchain, from source. `cpp-builder` exists solely for that; everything else arm64 needs (Wine, `plutonium-updater`, the BOIII path) builds fine.
 
-**Current state: iw4x does not work on arm64.** The source build fails and the image ships `/home/plutainer/.plutainer/iw4x-launcher.unavailable` instead of the binary. Plutonium (t4/t5/t6/iw5) and Black Ops III (t7x/boiii) are unaffected on both architectures. Background: iw4x/launcher#76.
+**Current state: iw4x does not work on arm64.** The source build fails and the image ships `/home/plutainer/.plutainer/iw4x-launcher.unavailable` instead of the binary. Plutonium (t4/t5/t6/iw5) and BOIII are unaffected on both architectures. Background: iw4x/launcher#76.
 
 **cod4x is amd64-only by nature**, not by build failure: upstream's native Linux server is a 32-bit x86 ELF, which cannot execute on arm64 at all. The `cod_update_cod4x` hook refuses with an explanation.
 
@@ -93,7 +93,7 @@ scripts/
   protocols/             # one module per wire protocol
 ```
 
-**There are exactly two families, and they are platforms rather than engines.** `cod` is everything Plutainer installs and runs itself from game files you supply; `steam` is everything SteamCMD installs. Engine variation (plutonium / iw4x / t7x / boiii / cod4x, unity / srcds) lives *below* the family as a table field, because it does not change how Plutainer treats the server — a Plutonium T6 and a CoD4x server differ far less from each other than either does from a SteamCMD install.
+**There are exactly two families, and they are platforms rather than engines.** `cod` is everything Plutainer installs and runs itself from game files you supply; `steam` is everything SteamCMD installs. Engine variation (plutonium / iw4x / ezz / cod4x, unity / srcds) lives *below* the family as a table field, because it does not change how Plutainer treats the server — a Plutonium T6 and a CoD4x server differ far less from each other than either does from a SteamCMD install.
 
 Both families have the same shape: one entry script, one game table, and hooks resolved most-specific-first. Adding a game to either should touch that family's file and nothing else, and never add a branch to `entrypoint.sh`, `healthcheck.sh` or `rcon-cli`.
 
@@ -107,7 +107,7 @@ Both families have the same shape: one entry script, one game table, and hooks r
    | empty | works | blocked |
    | gateway whitelisted | works | works |
 
-   So a sidecar admin tool completes the RCON handshake (`rcon <pw> version`, `sv_running` both answer) and then fails on repeated unanswered `getinfo`, aborting startup. The sender's address is this container's *bridge gateway*, which Docker assigns at run time, so it cannot be baked into a config file — `resolve_rcon_whitelist_args` detects it and appends `+rconWhitelistAdd`. T4 and IW5 answer queries regardless and are deliberately skipped, since adding an entry would newly restrict their RCON for no gain; iw4x and t7x have no such command.
+   So a sidecar admin tool completes the RCON handshake (`rcon <pw> version`, `sv_running` both answer) and then fails on repeated unanswered `getinfo`, aborting startup. The sender's address is this container's *bridge gateway*, which Docker assigns at run time, so it cannot be baked into a config file — `resolve_rcon_whitelist_args` detects it and appends `+rconWhitelistAdd`. T4 and IW5 answer queries regardless and are deliberately skipped, since adding an entry would newly restrict their RCON for no gain; iw4x and boiii have no such command.
 
 2. **`games/codentry.sh`** — Entry script for the whole `cod` family. **One script serves all ten games**; per-game facts live in the table in `lib/cod.sh` and per-engine steps are hooks it defines, resolved most-specific-first as `cod_<hook>_<game>` → `cod_<hook>_<base game>` → `cod_<hook>_<engine>`. Adding a game is a table row plus whatever hooks genuinely differ. If a game ever needs a `case` block in the entry script, the abstraction has slipped.
 
@@ -135,17 +135,19 @@ Both families have the same shape: one entry script, one game table, and hooks r
 
    A launcher failure is fatal only on first run (no `iw4x.exe` yet); otherwise it warns and starts the existing install.
 
-   **Black Ops III (T7x and BOIII).** Two clients for one game, so they share everything but the binary: one `cod_stage_bo3` staging both hooks call, one `zone/` engine config dir, one seed bundle (Dss0/t7-server-config), one default port. `cod_update_t7x` fetches `t7x.exe` from `master.bo3.eu` and `cod_update_boiii` fetches `boiii.exe` from `r2.ezz.lol`, both with `wget -N` so nothing is re-downloaded unless upstream is newer. No mod dir for either — on BO3 the MOD is a Steam Workshop ID, not a path. `usermaps/` is mirrored when the mount has one, which is how Workshop maps reach the server.
+   **Ezz BOIII (BO3).** Symlinks game files, fetches `boiii.exe` from `r2.ezz.lol` with `wget -N` (timestamping, so nothing is re-downloaded unless upstream is newer), seeds the Dss0/t7-server-config `zone/` configs, fans out config symlinks, `launch_game wine boiii.exe -headless -dedicated -quiet-crash -watchdog ... +map_rotate`. No mod dir — on BO3 the MOD is a Steam Workshop ID, not a path. `usermaps/` is mirrored when the mount has one, which is how Workshop maps reach the server.
 
-   **BOIII takes `-quiet-crash` and `-watchdog` on top of `-headless -dedicated`,** and `PLUTAINER_AUTO_UPDATE=false` additionally passes `-noupdate`. That last one matters: BOIII ships an in-game updater as well as the binary Plutainer downloads, so turning the variable off has to disable both halves or a hand-built `boiii.exe` in the volume gets replaced at the next start.
+   **`PLUTAINER_AUTO_UPDATE=false` has to disable two updaters, not one.** BOIII ships an in-game updater as well as the binary Plutainer downloads, so the variable both skips the `wget` and passes `-noupdate`. Without the second half, a hand-built `boiii.exe` in the volume is replaced at the next start — which is not hypothetical, since that is how it is developed.
 
-   **The engine label is `t7x`, not `alterware`.** T7x is no longer an Alterware project, and nothing else in the table used that engine, so the field and its hooks were renamed rather than left as a name that resolves to one game and misdescribes it.
+   **The engine label is `ezz`, after the client's owner**, the way `plutonium` is. The game tag is `boiii` and the base game is `boiii`, so hooks resolve on the game name and the engine field only carries provenance.
 
-   **`-headless` is what removes the X dependency — do not drop it.** t7x's `console` component calls `Sys_CreateConsole` and builds a real Win32 console *window* unless `game::is_headless()`; with `-headless` it attaches to the parent console and `fputs`es to stdout instead. Without it, under Wine with no display, the process hangs at `err:winediag:nodrv_CreateWindow` and never binds its port. The image ships no X server at all now; the flag is the only thing standing in for one. `-dedicated` is separate and still required (it forces `is_server` rather than relying on the "server exe present, client exe absent" fallback).
+   **`t7x` was removed, not renamed.** Black Ops III is served by BOIII alone now, so the tag is retired rather than unknown: `plutainer_explain_retired_game` in `lib/core.sh` catches it before the "unknown game" message and says to set `PLUTAINER_GAME=boiii`. No volume migration goes with it — same gamefiles mount, same `app/configs/`, same `zone/` config dir. That function is the one place a retired tag is explained; `derive_family` stays a pure lookup.
+
+   **`-headless` is what removes the X dependency — do not drop it.** BOIII's `console` component builds a real Win32 console *window* unless `game::is_headless()`; with `-headless` it attaches to the parent console and `fputs`es to stdout instead. Without it, under Wine with no display, the process hangs at `err:winediag:nodrv_CreateWindow` and never binds its port. The image ships no X server at all now; the flag is the only thing standing in for one. `-dedicated` is separate and still required (it forces `is_server` rather than relying on the "server exe present, client exe absent" fallback). `-quiet-crash` keeps a crash off a dialog nothing can dismiss, and `-watchdog` reports a wedged script VM instead of leaving a server that holds its port and answers nothing.
 
    **CoD4x.** CoD4x (Call of Duty 4) entrypoint. MP only. Same shape as the rest: mirrors `main/` and `zone/english/` from the read-only mount, stages the server binary and CoD4x assets, seeds configs, fans out config symlinks, validates, `launch_game ./cod4x18_dedrun`.
 
-   **The only family that does not use Wine.** Upstream publishes a native Linux dedicated server, `cod4x18_dedrun`, and it is a plain console app — no window, so no display either. The Windows build was tested and dies at `nodrv_CreateWindow` exactly as T7x does without `-headless`, which would have meant reintroducing Xvfb. The native binary was the risk to check instead: it is a 32-bit x86 ELF, and 32-bit Linux socket code is what Docker's seccomp blocks via `socketcall(2)` — the very reason this image sits on an Arch pure-WoW64 base. Measured: it opens its UDP and TCP sockets fine. Cost is `lib32-glibc` + `lib32-gcc-libs` from multilib.
+   **The only family that does not use Wine.** Upstream publishes a native Linux dedicated server, `cod4x18_dedrun`, and it is a plain console app — no window, so no display either. The Windows build was tested and dies at `nodrv_CreateWindow` exactly as BOIII does without `-headless`, which would have meant reintroducing Xvfb. The native binary was the risk to check instead: it is a 32-bit x86 ELF, and 32-bit Linux socket code is what Docker's seccomp blocks via `socketcall(2)` — the very reason this image sits on an Arch pure-WoW64 base. Measured: it opens its UDP and TCP sockets fine. Cost is `lib32-glibc` + `lib32-gcc-libs` from multilib.
 
    **Therefore CoD4x is amd64-only** — a 32-bit x86 ELF cannot run on arm64 at all. The entrypoint checks for the binary and `hold_indefinitely`s with an explanation, the same capability-check (not arch-check) pattern the iw4x hook uses.
 
@@ -214,7 +216,7 @@ Both families have the same shape: one entry script, one game table, and hooks r
    - `resolve_config_path`: convenience wrapper that resolves the engine dir + layout in one call so healthcheck/rcon-cli only need this.
    - `link_files <src> <dest> <name1>...`: existence-guarded symlink helper; replaces unsafe `ln -sf src/{a,b,c} dest/` bash brace expansion.
    - `link_dir_contents <src_root> <dest_root> <name>`: mirrors `src_root/name` into `dest_root/name`, recreating **every** directory level as a real dir and symlinking only leaf files. Use instead of `link_files` for any dir that must stay writable while also carrying read-only host game files — the engine config dir, or one an updater writes into. A symlinked dir at *any* depth inherits the read-only mount, so mirroring only the top level is not enough. `name` may be nested (`zone/english`) to mirror one subtree and leave its siblings alone; symlinks are replaced at every component of the path, since an older image may have linked a parent. Never overwrites a real file at the destination, so an updater-written copy wins over the host's.
-   - `seed_configs <game-key> <asset-root> <cfg-root-rel>`: walks bundled seed, lifts top-level `*.cfg` files inside `cfg-root-rel` into `CONFIG_SOT_DIR`, places everything else under `asset-root`. Idempotent. `COD_SEED_CFG_ONLY=true` takes the cfgs and drops the rest, which is how boiii shares the t7x bundle without also getting its `t7x/` data directory — bots.txt, gamesettings, lobby scripts — into a volume where nothing would ever open it. `COD_SEED_SKIP_CFGS` names cfgs in the bundle a game cannot use — boiii skips `server_cp.cfg`, since it hosts multiplayer and zombies only. A shared bundle is not a shared set of game modes.
+   - `seed_configs <game-key> <asset-root> <cfg-root-rel>`: walks bundled seed, lifts top-level `*.cfg` files inside `cfg-root-rel` into `CONFIG_SOT_DIR`, places everything else under `asset-root`. Idempotent. **What a game does not use is not vendored** — `seed-configs/boiii/` holds the Dss0 bundle's `zone/` configs and neither its `t7x/` tree (another client's data directory) nor `server_cp.cfg` (BOIII hosts MP and ZM only), both dropped by `tools/refresh-seeds.sh` rather than filtered at runtime.
    - `link_configs <engine-dir1> [engine-dir2 ...]`: variadic. Fans out symlinks from every `configs/*.cfg` into each engine dir using relative paths. Refuses to overwrite a real (non-symlink) file at engine path (warns instead). Reaps dangling cfg symlinks. No-op when `PLUTAINER_USE_RAW_CONFIGS=true`.
    - `ensure_config_present`: checks that `CONFIG_FILE` exists at `CONFIG_SOT_DIR`. If absent there but present as a real file at the ALT location, moves it (auto-lift). If absent everywhere, prints a refusal with a `find -iname` case-insensitive hint, returns non-zero.
    - `check_volume_version`: refuses v1 volumes with explicit migration instructions; initialises fresh volumes; writes `.plutainer-version=2`.
@@ -232,9 +234,9 @@ Both families have the same shape: one entry script, one game table, and hooks r
 
 7. **`healthcheck.sh`** — Sources `lib/core.sh`, resolves the port, then queries the server **unauthenticated** and requires a non-empty map name in the reply. Two protocols, dispatched on family: Quake3 `getstatus`/`getinfo` for the CoD engines, Valve `A2S_INFO` for the SteamCMD family. Both report a map, so "healthy" means the same thing everywhere rather than degrading to a TCP accept for the new family. Tries loopback then the container's own address (see the Source note under `steamentry.sh`). Enabled by default; disable with `PLUTAINER_HEALTHCHECK=false`. HEALTHCHECK directive uses `--start-period=5m` to accommodate first-run downloads.
 
-   **Why not RCON `status`, which it used before:** both queries are handled by the same connectionless-packet path in the same server frame loop, and both read the map from the same `mapname`/`sv_mapname` cvar, so their failure detection is identical — a stalled loop replies to neither, and a server that has lost its map reports no map to either. RCON only added a dependency on `rcon_password`, which every bundled seed ships empty, so a perfectly healthy first-run server could never report healthy. Match the map key case-insensitively: iw4x/t4/t5/t6 answer `mapname`, t7x answers `MapName`.
+   **Why not RCON `status`, which it used before:** both queries are handled by the same connectionless-packet path in the same server frame loop, and both read the map from the same `mapname`/`sv_mapname` cvar, so their failure detection is identical — a stalled loop replies to neither, and a server that has lost its map reports no map to either. RCON only added a dependency on `rcon_password`, which every bundled seed ships empty, so a perfectly healthy first-run server could never report healthy. Match the map key case-insensitively: iw4x/t4/t5/t6 answer `mapname`, BO3 answers `MapName`.
 
-   **`getstatus` first, `getinfo` second — the order is load-bearing in both directions.** IW5 (MW3) does not answer `getstatus` at all, only `getinfo`, so without the fallback a healthy IW5 server reports unhealthy forever. T7x answers both, but its `infoResponse` advertises the *lobby's* map while `statusResponse` reports the map actually running (observed: `getinfo` → `mp_chinatown` while `getstatus` → `mp_spire` on the same server), so preferring `getinfo` would report the wrong map. Verified across iw4x, t4 MP/ZM, t6 MP/ZM, t7x MP/ZM (all via `getstatus`) and iw5 (via `getinfo`).
+   **`getstatus` first, `getinfo` second — the order is load-bearing in both directions.** IW5 (MW3) does not answer `getstatus` at all, only `getinfo`, so without the fallback a healthy IW5 server reports unhealthy forever. BO3 answers both, but its `infoResponse` advertises the *lobby's* map while `statusResponse` reports the map actually running (observed: `getinfo` → `mp_chinatown` while `getstatus` → `mp_spire` on the same server), so preferring `getinfo` would report the wrong map. Verified across iw4x, t4 MP/ZM, t6 MP/ZM, BO3 MP/ZM (all via `getstatus`) and iw5 (via `getinfo`).
 
 8. **`rcon-cli`** — Interactive and one-shot remote console via `docker exec`. Calls `resolve_admin_endpoint` in `lib/core.sh`, which returns a protocol, port, credential and address list; the script is one small class per protocol and a dispatch table, so a new protocol is a class plus a table entry.
 
@@ -242,7 +244,7 @@ Both families have the same shape: one entry script, one game table, and hooks r
 
     | Family | Protocol | Transport | Credential source |
     | --- | --- | --- | --- |
-    | Plutonium, IW4x, T7x, BOIII, CoD4x | Quake3 RCON | UDP, game port | `rcon_password` in the cfg |
+    | Plutonium, IW4x, BOIII, CoD4x | Quake3 RCON | UDP, game port | `rcon_password` in the cfg |
     | Source (hl2dm) | Valve RCON | TCP, game port | `rcon_password` in the cfg |
     | 7 Days to Die | telnet console | TCP, `TelnetPort` | `TelnetPassword` in the XML |
 
@@ -253,7 +255,7 @@ Both families have the same shape: one entry script, one game table, and hooks r
     **`protocols/quake3.py`** (was `pyquake3.py`) — Minimal Quake 3 connectionless-protocol client (UDP), trimmed from the upstream GPL library to the two paths in use: `query_values(query)` (unauthenticated `getstatus`/`getinfo`) backs the health check, `rcon()` backs `rcon-cli`. The upstream `Player`/`parse_players`/`rcon_update` machinery was removed — nothing consumed it.
 
     Two engine quirks live in `parse_packet`, both found the hard way:
-    - **T7x prefixes its `statusResponse` with a stray `0x44` byte** before the `\xff\xff\xff\xff` connectionless prefix. Demanding the prefix at offset 0 rejected it as `Malformed packet`, which is why **RCON never worked on t7x at all** — the old healthcheck failed there regardless of password. The prefix is now located within an 8-byte window.
+    - **BO3 prefixes its `statusResponse` with a stray `0x44` byte** before the `\xff\xff\xff\xff` connectionless prefix. Demanding the prefix at offset 0 rejected it as `Malformed packet`, which is why **RCON never worked on BO3 at all** — the old healthcheck failed there regardless of password. The prefix is now located within an 8-byte window. (Measured on t7x, which Plutainer no longer ships; BOIII is the same engine and behaves the same way.)
     - **Not every reply has a payload:** t5's zombies build answers unexpected connectionless packets with a bare `disconnect` and no newline. That is now parsed as "type, empty body" so the caller reports "replied without a map name" instead of a parse error.
 
 10. **`tools/refresh-seeds.sh`** — The only thing that should rewrite `seed-configs/`. Resolves each upstream repo's branch to a commit SHA, downloads that exact tarball, copies the per-repo subpaths, strips `*REFERENCE*` dirs and `.bat`/`.sh`/`README*`, appends the iw4x `sv_maprotation` block, applies `harden_rcon_for_docker` (below), and writes `seed-configs/<game>/SOURCE` with the commit.
@@ -292,9 +294,9 @@ Both families have the same shape: one entry script, one game table, and hooks r
 
 For Plutonium, `BASE_GAME` is derived by stripping the last two chars from `PLUTAINER_GAME` (e.g., `t6zm` → `t6`). This drives:
 
-- **Default ports**: iw4x→28960, iw5→27016, t4/t5→28960, t6→4976, t7x/boiii→27017. SteamCMD games carry their port in the family table instead (7dtd→26900, hl2dm→27015), so `resolve_default_port` delegates rather than listing them.
-- **Engine config dirs** (where the game reads `+exec`'d cfg files): t4 → `runtime/gamefiles/main/`, iw5 → `runtime/gamefiles/admin/`, iw4x → `runtime/gamefiles/userraw/`, t7x and boiii → `runtime/gamefiles/zone/`, others → `runtime/plutonium/storage/<base_game>/`.
-- **Command args**: iw5 uses `+set sv_config` and `+start_map_rotate`; others use `+exec` and `+map_rotate`. The map-rotate arg is opt-out family-wide via `PLUTAINER_MAP_ROTATE=false` (Plutonium + IW4x; T7x never had one).
+- **Default ports**: iw4x→28960, iw5→27016, t4/t5→28960, t6→4976, boiii→27017. SteamCMD games carry their port in the family table instead (7dtd→26900, hl2dm→27015), so `resolve_default_port` delegates rather than listing them.
+- **Engine config dirs** (where the game reads `+exec`'d cfg files): t4 → `runtime/gamefiles/main/`, iw5 → `runtime/gamefiles/admin/`, iw4x → `runtime/gamefiles/userraw/`, boiii → `runtime/gamefiles/zone/`, others → `runtime/plutonium/storage/<base_game>/`.
+- **Command args**: iw5 uses `+set sv_config` and `+start_map_rotate`; others use `+exec` and `+map_rotate`. The map-rotate arg is opt-out family-wide via `PLUTAINER_MAP_ROTATE=false`.
 - **Game-file symlinks** differ per base game (see the `cod_stage_*` hooks in `lib/cod.sh`).
 
 ## Compatibility surface

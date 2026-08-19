@@ -33,7 +33,7 @@ ENV WINEDLLOVERRIDES="mscoree,mshtml="
 USER plutainer
 WORKDIR /home/plutainer/.plutainer
 
-# No X server anywhere in the image: every server we run is headless. t7x needs
+# No X server anywhere in the image: every server we run is headless. BOIII needs
 # `-headless` for that (see alterentry.sh); wineboot only warns about the
 # missing display driver and still initialises the prefix.
 RUN wineboot -u && wineserver -w

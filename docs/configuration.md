@@ -6,7 +6,7 @@ Every setting is an environment variable. Only two are required.
 
 | Variable | Description |
 | --- | --- |
-| `PLUTAINER_GAME` | Which game — `t4mp`, `t4sp`, `t5mp`, `t5sp`, `t6mp`, `t6zm`, `iw5mp`, `iw4x`, `t7x`, `boiii`, `cod4x`, `7dtd`, `cs2`, `l4d2`, `hl2dm` |
+| `PLUTAINER_GAME` | Which game — `t4mp`, `t4sp`, `t5mp`, `t5sp`, `t6mp`, `t6zm`, `iw5mp`, `iw4x`, `boiii`, `cod4x`, `7dtd`, `cs2`, `l4d2`, `hl2dm` |
 | `PLUTAINER_CONFIG_FILE` | Which config to run, e.g. `dedicated_zm.cfg`. Must exist in `app/configs/` — Plutainer seeds one on first start ([names per game](games.md)). Optional for the SteamCMD games, which default to their own config name |
 
 Plutonium games (`t4*`, `t5*`, `t6*`, `iw5mp`) also require `PLUTO_SERVER_KEY`.
@@ -18,8 +18,8 @@ Plutonium games (`t4*`, `t5*`, `t6*`, `iw5mp`) also require `PLUTO_SERVER_KEY`.
 | `PLUTAINER_PORT` | Network port | [per game](games.md) |
 | `PLUTAINER_RCON_PASSWORD` | Sets `rcon_password` in your config at startup. Opt-in — unset leaves your config untouched | unset |
 | `PLUTAINER_SERVER_NAME` | Name shown in Plutainer's startup logs. On the SteamCMD games it also sets the real server name (7DTD's XML `ServerName`, Source's `hostname`); CoD engines still use `sv_hostname` in their cfg | per family |
-| `PLUTAINER_MOD` | Mod folder name. On T7x, a Steam Workshop ID instead | unset |
-| `PLUTAINER_MAP_ROTATE` | `false` drops the automatic `+map_rotate` (`+start_map_rotate` on IW5), leaving map choice to your cfg or playlist. N/A on T7x | `true` |
+| `PLUTAINER_MOD` | Mod folder name. On BOIII, a Steam Workshop ID instead | unset |
+| `PLUTAINER_MAP_ROTATE` | `false` drops the automatic `+map_rotate` (`+start_map_rotate` on IW5), leaving map choice to your cfg or playlist | `true` |
 | `PLUTAINER_EXTRA_ARGS` | Extra arguments appended to the launch command | unset |
 | `PLUTAINER_AUTO_UPDATE` | `false` skips update checks at startup | `true` |
 | `PLUTAINER_HEALTHCHECK` | `false` disables the healthcheck | `true` |
@@ -65,7 +65,6 @@ These only apply to one engine family.
 | t4, t5, iw4x, cod4x | 28960 |
 | t6 | 4976 |
 | iw5 | 27016 |
-| t7x | 27017 |
 | boiii | 27017 |
 | 7dtd | 26900 |
 | cs2 | 27015 |

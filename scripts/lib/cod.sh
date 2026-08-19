@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # The `cod` family: Quake-derived servers Plutainer installs and runs itself —
-# Plutonium (T4/T5/T6/IW5), IW4x, T7x, BOIII and CoD4x.
+# Plutonium (T4/T5/T6/IW5), IW4x, Ezz BOIII and CoD4x.
 #
 # One entry script (games/codentry.sh) serves all ten games; what differs
 # between them lives in the table below and in the hook functions beneath it.
@@ -52,21 +52,9 @@ cod_resolve_config_path() {
 #     asset_root, preserving the seed's relative path.
 # Always idempotent: never overwrites a file that already exists.
 #
-# COD_SEED_CFG_ONLY=true takes the configs and leaves the rest behind. It
-# exists because two games can share a bundle without sharing everything in
-# it: BOIII uses the t7x configs, but the bundle also carries a t7x/ directory
-# — bots.txt, gamesettings, lobby scripts — which is T7x's own data directory.
-# BOIII reads boiii/, which it unpacks from its own binary, so seeding t7x/
-# next to it would put a directory in the volume that nothing ever opens.
-#
-# COD_SEED_SKIP_CFGS names cfg files the bundle carries that this game cannot
-# use — a shared bundle is not the same as a shared game mode.
-#
 # Args: <game-key> <asset_root> <cfg_root_rel>
 seed_configs() {
   local game="$1" asset_root="$2" cfg_root_rel="${3:-}"
-  local -a skip_cfgs=()
-  read -ra skip_cfgs <<< "${COD_SEED_SKIP_CFGS:-}"
   local src="/home/plutainer/.plutainer/seed-configs/${game}"
   [[ -d "$src" ]] || return 0
   mkdir -p "$asset_root" "$CONFIG_SOT_DIR"
@@ -80,15 +68,7 @@ seed_configs() {
     parent="$(dirname "$rel")"
     [[ "$parent" == "." ]] && parent=""
     if [[ "$rel" == *.cfg && "$parent" == "$cfg_root_rel" ]]; then
-      local base skip="" candidate
-      base="$(basename "$rel")"
-      for candidate in ${skip_cfgs[@]+"${skip_cfgs[@]}"}; do
-        [[ "$base" == "$candidate" ]] && { skip="yes"; break; }
-      done
-      [[ -n "$skip" ]] && continue
-      dest="$CONFIG_SOT_DIR/$base"
-    elif [[ "${COD_SEED_CFG_ONLY:-}" == "true" ]]; then
-      continue
+      dest="$CONFIG_SOT_DIR/$(basename "$rel")"
     else
       dest="$asset_root/$rel"
     fi
@@ -223,7 +203,7 @@ extract_rcon_password() {
 #
 # T4 and IW5 do not gate queries this way and are left alone: adding an entry
 # makes their whitelist non-empty, which would newly restrict RCON to the
-# listed addresses for no benefit. iw4x and t7x have no such command at all.
+# listed addresses for no benefit. iw4x and boiii have no such command at all.
 #
 # Adding entries does mean T5/T6 RCON becomes "whitelisted + loopback only",
 # which is the same posture upstream's placeholder entries intended (and what
@@ -387,14 +367,12 @@ cod_resolve_admin_endpoint() {
 #
 # Fields set by cod_resolve_game:
 #
-#   COD_ENGINE            plutonium | iw4x | t7x | boiii | cod4x
-#   BASE_GAME             t4 | t5 | t6 | iw5 | iw4x | t7x | boiii | cod4x
+#   COD_ENGINE            plutonium | iw4x | ezz | cod4x
+#   BASE_GAME             t4 | t5 | t6 | iw5 | iw4x | boiii | cod4x
 #   COD_DEFAULT_PORT      port when PLUTAINER_PORT is unset
 #   COD_SEED_KEY          seed-configs/<key>, empty for no seed bundle
 #   COD_SEED_ASSET_ROOT   where non-cfg seed files land
 #   COD_SEED_CFG_ROOT     subdir within the bundle whose top-level *.cfg lift
-#   COD_SEED_CFG_ONLY     "true" to take only those cfgs and drop the rest
-#   COD_SEED_SKIP_CFGS    cfg basenames in the bundle this game cannot use
 #   COD_LABEL             name used in log lines
 #
 # ENGINE_CONFIG_DIR and MOD_CONFIG_DIR are set here too, since they are per-game
@@ -402,7 +380,7 @@ cod_resolve_admin_endpoint() {
 #
 # Games this family serves. derive_family() consults this, so adding a game is
 # a change to this file and nothing else.
-COD_GAMES=(t4mp t4sp t5mp t5sp t6mp t6zm iw5mp iw4x t7x boiii cod4x)
+COD_GAMES=(t4mp t4sp t5mp t5sp t6mp t6zm iw5mp iw4x boiii cod4x)
 
 cod_is_known_game() {
   local candidate="$1" game
@@ -418,8 +396,6 @@ cod_resolve_game() {
   COD_SEED_KEY=""
   COD_SEED_ASSET_ROOT=""
   COD_SEED_CFG_ROOT=""
-  COD_SEED_CFG_ONLY=""
-  COD_SEED_SKIP_CFGS=""
 
   case "$game" in
     t4mp|t4sp)
@@ -453,27 +429,11 @@ cod_resolve_game() {
       COD_SEED_CFG_ROOT="userraw"
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/userraw"
       ;;
-    t7x)
-      COD_ENGINE="t7x";       BASE_GAME="t7x";  COD_DEFAULT_PORT=27017
-      COD_LABEL="T7x (Black Ops III)"
-      COD_SEED_KEY="t7x"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
-      COD_SEED_CFG_ROOT="zone"
-      ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone"
-      ;;
     boiii)
-      # Same game, same game files, same config dir and the same seed bundle as
-      # t7x — a second client for Black Ops III rather than a second game. Only
-      # the binary and its launch flags differ.
-      COD_ENGINE="boiii";     BASE_GAME="boiii"; COD_DEFAULT_PORT=27017
-      COD_LABEL="BOIII (Black Ops III)"
-      COD_SEED_KEY="t7x"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
+      COD_ENGINE="ezz";       BASE_GAME="boiii"; COD_DEFAULT_PORT=27017
+      COD_LABEL="Ezz BOIII (Black Ops III)"
+      COD_SEED_KEY="boiii"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
       COD_SEED_CFG_ROOT="zone"
-      # The bundle's t7x/ tree is T7x's data directory; BOIII unpacks its own
-      # boiii/ from the binary and never reads it. Campaign is dropped for the
-      # same reason a config is not seeded for a mode that cannot be hosted:
-      # BOIII runs multiplayer and zombies only.
-      COD_SEED_CFG_ONLY="true"
-      COD_SEED_SKIP_CFGS="server_cp.cfg"
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone"
       ;;
     cod4x)
@@ -650,7 +610,7 @@ cod_update_iw4x() {
   This image was built for an architecture upstream does not publish a launcher
   binary for, and building it from source failed. Tracked as iw4x/launcher#76.
   Options: run iw4x on an amd64 host, or use a different PLUTAINER_GAME —
-  Plutonium (t4/t5/t6/iw5) and Black Ops III (t7x/boiii) are unaffected."
+  Plutonium (t4/t5/t6/iw5) and Ezz BOIII are unaffected."
   fi
 
   if [[ ! -f "$launcher" || "$src" -nt "$launcher" ]]; then
@@ -699,18 +659,15 @@ cod_launch_iw4x() {
   cod_append_map_rotate +map_rotate
 }
 
-# --- Black Ops III: T7x and BOIII -------------------------------------------
-#
-# Two separate clients for the same game. They share the game files, the engine
-# config dir (zone/) and the seed bundle, and differ only in which binary is
-# fetched and how it is launched — so the staging is written once and both
-# engines point at it.
+# --- Ezz BOIII (Black Ops III) ----------------------------------------------
 
-cod_stage_bo3() {
+BOIII_BINARY_URL="https://r2.ezz.lol/boiii/boiii.exe"
+
+cod_stage_boiii() {
   link_files "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" \
     codlogo.bmp machinecfg steam_api64.dll steamclient64.dll tier0_s64.dll vstdlib_s64.dll
 
-  # Both decide they are a dedicated server by checking which executables exist:
+  # BOIII decides it is a dedicated server by checking which executables exist:
   #   is_server = has_flag("dedicated") || (!has_client && has_server)
   # Under Wine, flag detection via GetCommandLineW() can be unreliable, so only
   # the server binary is linked, guaranteeing the fallback path fires.
@@ -733,45 +690,6 @@ cod_stage_bo3() {
   fi
 }
 
-cod_stage_t7x()   { cod_stage_bo3; }
-cod_stage_boiii() { cod_stage_bo3; }
-
-cod_update_t7x() {
-  local exe="$PLUTAINER_GAMEFILES_DIR/t7x.exe"
-  if [[ -f "$exe" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
-    echo "Skipping T7x update because PLUTAINER_AUTO_UPDATE is set to 'false'."
-    return 0
-  fi
-  if [[ -f "$exe" ]]; then
-    echo "Checking for T7x updates..."
-  else
-    echo "First container run detected. Downloading T7x... This may take a moment."
-  fi
-  # wget -N is timestamping: it only downloads when upstream is newer.
-  wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" https://master.bo3.eu/t7x/t7x.exe
-}
-
-cod_launch_t7x() {
-  COD_WORKDIR="$PLUTAINER_GAMEFILES_DIR"
-  # `-headless` makes t7x skip Sys_CreateConsole and print to stdout instead of
-  # building a Win32 console window, so no X display is needed. Without it the
-  # server hangs on window creation ("nodrv_CreateWindow") and never binds its
-  # port — which is why this image used to ship Xvfb.
-  COD_LAUNCH_CMD=(
-    wine t7x.exe
-    -headless
-    -dedicated
-    +set fs_game "${PLUTAINER_MOD:-}"
-    +set net_port "$ACTIVE_PORT"
-    +set logfile "2"
-    +exec "$CONFIG_FILE"
-  )
-  cod_append_extra_args
-  # T7x has never had a map-rotate argument.
-}
-
-BOIII_BINARY_URL="https://r2.ezz.lol/boiii/boiii.exe"
-
 cod_update_boiii() {
   local exe="$PLUTAINER_GAMEFILES_DIR/boiii.exe"
   if [[ -f "$exe" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
@@ -792,11 +710,13 @@ cod_update_boiii() {
 cod_launch_boiii() {
   COD_WORKDIR="$PLUTAINER_GAMEFILES_DIR"
 
-  # `-headless` does the same job here as it does for t7x: no Win32 console
-  # window, so no X display. `-quiet-crash` suppresses the crash dialog, which
-  # nothing can dismiss in a container. `-watchdog` starts BOIII's own hang
-  # detector, which reports a wedged script VM to the log instead of leaving a
-  # server that holds its port and answers nothing.
+  # `-headless` is what removes the X dependency: BOIII's console component
+  # builds a real Win32 console *window* unless it is headless, and under Wine
+  # with no display the process hangs on window creation
+  # ("nodrv_CreateWindow") and never binds its port. `-quiet-crash` suppresses
+  # the crash dialog, which nothing in a container can dismiss. `-watchdog`
+  # starts BOIII's own hang detector, which reports a wedged script VM to the
+  # log instead of leaving a server that holds its port and answers nothing.
   COD_LAUNCH_CMD=(
     wine boiii.exe
     -headless
@@ -840,7 +760,7 @@ cod_update_cod4x() {
   [[ -x "$COD4X_ASSET_DIR/$COD4X_BINARY" ]] || hold_indefinitely \
     "CoD4x is not available in this image (no ${COD4X_BINARY}).
   Upstream publishes a 32-bit x86 Linux binary only, so CoD4x cannot run on this
-  architecture. Plutonium, IW4x and Black Ops III titles are unaffected."
+  architecture. Plutonium, IW4x and Ezz BOIII titles are unaffected."
 
   local dest="$PLUTAINER_GAMEFILES_DIR/$COD4X_BINARY"
 
