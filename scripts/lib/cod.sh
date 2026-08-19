@@ -51,6 +51,14 @@ cod_resolve_config_path() {
 #   - Everything else (assets, mod scripts, nested cfgs, etc) lands under
 #     asset_root, preserving the seed's relative path.
 # Always idempotent: never overwrites a file that already exists.
+#
+# COD_SEED_CFG_ONLY=true takes the configs and leaves the rest behind. It
+# exists because two games can share a bundle without sharing everything in
+# it: BOIII uses the t7x configs, but the bundle also carries a t7x/ directory
+# — bots.txt, gamesettings, lobby scripts — which is T7x's own data directory.
+# BOIII reads boiii/, which it unpacks from its own binary, so seeding t7x/
+# next to it would put a directory in the volume that nothing ever opens.
+#
 # Args: <game-key> <asset_root> <cfg_root_rel>
 seed_configs() {
   local game="$1" asset_root="$2" cfg_root_rel="${3:-}"
@@ -68,6 +76,8 @@ seed_configs() {
     [[ "$parent" == "." ]] && parent=""
     if [[ "$rel" == *.cfg && "$parent" == "$cfg_root_rel" ]]; then
       dest="$CONFIG_SOT_DIR/$(basename "$rel")"
+    elif [[ "${COD_SEED_CFG_ONLY:-}" == "true" ]]; then
+      continue
     else
       dest="$asset_root/$rel"
     fi
@@ -372,6 +382,7 @@ cod_resolve_admin_endpoint() {
 #   COD_SEED_KEY          seed-configs/<key>, empty for no seed bundle
 #   COD_SEED_ASSET_ROOT   where non-cfg seed files land
 #   COD_SEED_CFG_ROOT     subdir within the bundle whose top-level *.cfg lift
+#   COD_SEED_CFG_ONLY     "true" to take only those cfgs and drop the rest
 #   COD_LABEL             name used in log lines
 #
 # ENGINE_CONFIG_DIR and MOD_CONFIG_DIR are set here too, since they are per-game
@@ -395,6 +406,7 @@ cod_resolve_game() {
   COD_SEED_KEY=""
   COD_SEED_ASSET_ROOT=""
   COD_SEED_CFG_ROOT=""
+  COD_SEED_CFG_ONLY=""
 
   case "$game" in
     t4mp|t4sp)
@@ -443,6 +455,9 @@ cod_resolve_game() {
       COD_LABEL="BOIII (Black Ops III)"
       COD_SEED_KEY="t7x"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
       COD_SEED_CFG_ROOT="zone"
+      # The bundle's t7x/ tree is T7x's data directory; BOIII unpacks its own
+      # boiii/ from the binary and never reads it.
+      COD_SEED_CFG_ONLY="true"
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone"
       ;;
     cod4x)
