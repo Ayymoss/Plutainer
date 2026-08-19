@@ -814,10 +814,52 @@ cod_launch_cod4x() {
 
 # --- shared launch-argument helpers ----------------------------------------
 
+# A `-flag` appended after the `+` block is silently eaten by the command
+# before it, because the engine's console parser reads everything up to the
+# next `+` as arguments to that command. Measured: PLUTAINER_EXTRA_ARGS
+# "-prime-first-spawn" produced
+#
+#   ... +exec server_zm.cfg -prime-first-spawn +map_rotate
+#
+# so the server ran `exec "server_zm.cfg -prime-first-spawn"`, which fails.
+# It then started with no config at all — no rcon password, no map rotation,
+# sitting in a default lobby — while the config file on disk was perfectly
+# correct, which is about as misleading as a failure gets.
+#
+# So extras are split: engine flags go in front of the `+` block where the
+# engine reads them, console commands stay at the end where they belong. A
+# value following a flag travels with it (`-foo bar`), and anything before the
+# first `+` in COD_LAUNCH_CMD is the executable and this engine's own flags.
 cod_append_extra_args() {
-  # Intentionally word-split: users pass several flags in one variable.
+  [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]] || return 0
+
+  # Intentionally word-split: users pass several arguments in one variable.
   # shellcheck disable=SC2206
-  [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]] && COD_LAUNCH_CMD+=( ${PLUTAINER_EXTRA_ARGS} )
+  local -a extras=( ${PLUTAINER_EXTRA_ARGS} )
+  local -a flag_args=() cmd_args=()
+  local arg in_flag=""
+
+  for arg in "${extras[@]}"; do
+    case "$arg" in
+      -*) in_flag="yes"; flag_args+=("$arg") ;;
+      +*) in_flag="";    cmd_args+=("$arg")  ;;
+      *)  if [[ -n "$in_flag" ]]; then flag_args+=("$arg"); else cmd_args+=("$arg"); fi ;;
+    esac
+  done
+
+  if (( ${#flag_args[@]} )); then
+    local -a head=() tail=()
+    local seen_plus=""
+    for arg in "${COD_LAUNCH_CMD[@]}"; do
+      if [[ -z "$seen_plus" && "$arg" == +* ]]; then
+        seen_plus="yes"
+      fi
+      if [[ -n "$seen_plus" ]]; then tail+=("$arg"); else head+=("$arg"); fi
+    done
+    COD_LAUNCH_CMD=( "${head[@]}" "${flag_args[@]}" ${tail[@]+"${tail[@]}"} )
+  fi
+
+  (( ${#cmd_args[@]} )) && COD_LAUNCH_CMD+=( "${cmd_args[@]}" )
   return 0
 }
 

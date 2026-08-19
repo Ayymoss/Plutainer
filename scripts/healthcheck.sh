@@ -130,6 +130,14 @@ MAP_KEYS = ('mapname', 'sv_mapname')
 #     would report the wrong map on a healthy server.
 QUERIES = ('getstatus', 'getinfo')
 
+# A map name alone is not proof the server is hosting one. Measured on BO3
+# after a drop: the game shut down, the lobby could not be rebuilt, no map was
+# ever hosted again — and getinfo kept answering with the LAST map's name
+# while sv_running read 0. The port answers, the reply looks right, and the
+# server is dead. Where the engine reports sv_running, believe it over the
+# name; engines that do not report it are unaffected.
+RUNNING_KEYS = ('sv_running',)
+
 server = quake3.Quake3Server('127.0.0.1:${HEALTHCHECK_PORT}')
 
 problems = []
@@ -138,6 +146,16 @@ for query in QUERIES:
         values = server.query_values(query)
     except Exception as e:
         problems.append('%s: %s' % (query, e))
+        continue
+
+    running = None
+    for key, value in values.items():
+        if key.strip().lower() in RUNNING_KEYS:
+            running = (value or '').strip()
+
+    if running is not None and running in ('0', 'false'):
+        problems.append('%s: answered but sv_running is %s — no map is hosted'
+                        % (query, running))
         continue
 
     for key, value in values.items():
