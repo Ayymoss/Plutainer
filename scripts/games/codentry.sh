@@ -1,15 +1,16 @@
 #!/bin/bash
 #
-# Entry script for the `cod` family — every Plutonium, IW4x, Alterware and CoD4x
-# game. Nothing in here is specific to one of them: the per-game facts live in
-# the table in lib/cod.sh, and the per-engine steps are hooks it defines.
+# Entry script for the `cod` family — every Plutonium, IW4x, T7x, BOIII and
+# CoD4x game. Nothing in here is specific to one of them: the per-game facts
+# live in the table in lib/cod.sh, and the per-engine steps are hooks it
+# defines.
 #
 # The order of these steps is load-bearing and was arrived at the hard way:
 #
 #   stage     mirror the read-only game files into the volume, because the
 #             engine needs to write next to them
 #   update    fetch the server binaries (Plutonium updater, iw4x-launcher,
-#             t7x.exe, or CoD4x's staged binary)
+#             t7x.exe, boiii.exe, or CoD4x's staged binary)
 #   auto-lift a real cfg the user left at the engine path is the strongest
 #             signal of intent, so it is moved into configs/ BEFORE seeding,
 #             or the seed's cp -n would paper over it

@@ -6,7 +6,7 @@ Every setting is an environment variable. Only two are required.
 
 | Variable | Description |
 | --- | --- |
-| `PLUTAINER_GAME` | Which game — `t4mp`, `t4sp`, `t5mp`, `t5sp`, `t6mp`, `t6zm`, `iw5mp`, `iw4x`, `t7x`, `cod4x`, `7dtd`, `cs2`, `l4d2`, `hl2dm` |
+| `PLUTAINER_GAME` | Which game — `t4mp`, `t4sp`, `t5mp`, `t5sp`, `t6mp`, `t6zm`, `iw5mp`, `iw4x`, `t7x`, `boiii`, `cod4x`, `7dtd`, `cs2`, `l4d2`, `hl2dm` |
 | `PLUTAINER_CONFIG_FILE` | Which config to run, e.g. `dedicated_zm.cfg`. Must exist in `app/configs/` — Plutainer seeds one on first start ([names per game](games.md)). Optional for the SteamCMD games, which default to their own config name |
 
 Plutonium games (`t4*`, `t5*`, `t6*`, `iw5mp`) also require `PLUTO_SERVER_KEY`.
@@ -66,6 +66,7 @@ These only apply to one engine family.
 | t6 | 4976 |
 | iw5 | 27016 |
 | t7x | 27017 |
+| boiii | 27017 |
 | 7dtd | 26900 |
 | cs2 | 27015 |
 | l4d2 | 27015 |

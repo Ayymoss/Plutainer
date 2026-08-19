@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Plutainer is a Docker image for running Plutonium, IW4x, Alterware and CoD4x dedicated game servers (Call of Duty titles: T4/WaW, T5/BO1, T6/BO2, IW5/MW3, IW4x/MW2, T7x/BO3, CoD4x/CoD4). It uses Wine on Arch Linux to run the Windows game server binaries, configured entirely via environment variables. CoD4x is the exception: upstream ships a native Linux server, so it runs directly with no Wine (and is therefore amd64-only — the binary is 32-bit x86).
+Plutainer is a Docker image for running Plutonium, IW4x, T7x, BOIII and CoD4x dedicated game servers (Call of Duty titles: T4/WaW, T5/BO1, T6/BO2, IW5/MW3, IW4x/MW2, T7x and BOIII for BO3, CoD4x/CoD4). It uses Wine on Arch Linux to run the Windows game server binaries, configured entirely via environment variables. CoD4x is the exception: upstream ships a native Linux server, so it runs directly with no Wine (and is therefore amd64-only — the binary is 32-bit x86).
 
 ## Documentation layout
 
@@ -63,7 +63,7 @@ amd64 is required. **arm64 is best-effort** (`optional: true` + `continue-on-err
 
 `iw4x/launcher` publishes `x86_64` binaries only, so `Dockerfile` downloads the prebuilt binary while `Dockerfile.arm64` compiles it, and the build2 toolchain, from source. `cpp-builder` exists solely for that; everything else arm64 needs (Wine, `plutonium-updater`, the T7x path) builds fine.
 
-**Current state: iw4x does not work on arm64.** The source build fails and the image ships `/home/plutainer/.plutainer/iw4x-launcher.unavailable` instead of the binary. Plutonium (t4/t5/t6/iw5) and Alterware (t7x) are unaffected on both architectures. Background: iw4x/launcher#76.
+**Current state: iw4x does not work on arm64.** The source build fails and the image ships `/home/plutainer/.plutainer/iw4x-launcher.unavailable` instead of the binary. Plutonium (t4/t5/t6/iw5) and Black Ops III (t7x/boiii) are unaffected on both architectures. Background: iw4x/launcher#76.
 
 **cod4x is amd64-only by nature**, not by build failure: upstream's native Linux server is a 32-bit x86 ELF, which cannot execute on arm64 at all. The `cod_update_cod4x` hook refuses with an explanation.
 
@@ -93,7 +93,7 @@ scripts/
   protocols/             # one module per wire protocol
 ```
 
-**There are exactly two families, and they are platforms rather than engines.** `cod` is everything Plutainer installs and runs itself from game files you supply; `steam` is everything SteamCMD installs. Engine variation (plutonium / iw4x / alterware / cod4x, unity / srcds) lives *below* the family as a table field, because it does not change how Plutainer treats the server — a Plutonium T6 and a CoD4x server differ far less from each other than either does from a SteamCMD install.
+**There are exactly two families, and they are platforms rather than engines.** `cod` is everything Plutainer installs and runs itself from game files you supply; `steam` is everything SteamCMD installs. Engine variation (plutonium / iw4x / t7x / boiii / cod4x, unity / srcds) lives *below* the family as a table field, because it does not change how Plutainer treats the server — a Plutonium T6 and a CoD4x server differ far less from each other than either does from a SteamCMD install.
 
 Both families have the same shape: one entry script, one game table, and hooks resolved most-specific-first. Adding a game to either should touch that family's file and nothing else, and never add a branch to `entrypoint.sh`, `healthcheck.sh` or `rcon-cli`.
 
@@ -135,7 +135,11 @@ Both families have the same shape: one entry script, one game table, and hooks r
 
    A launcher failure is fatal only on first run (no `iw4x.exe` yet); otherwise it warns and starts the existing install.
 
-   **Alterware (T7x).** Alterware (T7x/BO3) entrypoint. Symlinks game files, uses `wget -N` (timestamping) to fetch `t7x.exe` only when upstream is newer, seeds Dss0/t7-server-config bundle, fans out config symlinks, `launch_game wine t7x.exe -headless -dedicated ...`. No mod dir (alterware MOD is a Steam Workshop ID).
+   **Black Ops III (T7x and BOIII).** Two clients for one game, so they share everything but the binary: one `cod_stage_bo3` staging both hooks call, one `zone/` engine config dir, one seed bundle (Dss0/t7-server-config), one default port. `cod_update_t7x` fetches `t7x.exe` from `master.bo3.eu` and `cod_update_boiii` fetches `boiii.exe` from `r2.ezz.lol`, both with `wget -N` so nothing is re-downloaded unless upstream is newer. No mod dir for either — on BO3 the MOD is a Steam Workshop ID, not a path. `usermaps/` is mirrored when the mount has one, which is how Workshop maps reach the server.
+
+   **BOIII takes `-quiet-crash` and `-watchdog` on top of `-headless -dedicated`,** and `PLUTAINER_AUTO_UPDATE=false` additionally passes `-noupdate`. That last one matters: BOIII ships an in-game updater as well as the binary Plutainer downloads, so turning the variable off has to disable both halves or a hand-built `boiii.exe` in the volume gets replaced at the next start.
+
+   **The engine label is `t7x`, not `alterware`.** T7x is no longer an Alterware project, and nothing else in the table used that engine, so the field and its hooks were renamed rather than left as a name that resolves to one game and misdescribes it.
 
    **`-headless` is what removes the X dependency — do not drop it.** t7x's `console` component calls `Sys_CreateConsole` and builds a real Win32 console *window* unless `game::is_headless()`; with `-headless` it attaches to the parent console and `fputs`es to stdout instead. Without it, under Wine with no display, the process hangs at `err:winediag:nodrv_CreateWindow` and never binds its port. The image ships no X server at all now; the flag is the only thing standing in for one. `-dedicated` is separate and still required (it forces `is_server` rather than relying on the "server exe present, client exe absent" fallback).
 
@@ -238,7 +242,7 @@ Both families have the same shape: one entry script, one game table, and hooks r
 
     | Family | Protocol | Transport | Credential source |
     | --- | --- | --- | --- |
-    | Plutonium, IW4x, Alterware, CoD4x | Quake3 RCON | UDP, game port | `rcon_password` in the cfg |
+    | Plutonium, IW4x, T7x, BOIII, CoD4x | Quake3 RCON | UDP, game port | `rcon_password` in the cfg |
     | Source (hl2dm) | Valve RCON | TCP, game port | `rcon_password` in the cfg |
     | 7 Days to Die | telnet console | TCP, `TelnetPort` | `TelnetPassword` in the XML |
 
@@ -288,8 +292,8 @@ Both families have the same shape: one entry script, one game table, and hooks r
 
 For Plutonium, `BASE_GAME` is derived by stripping the last two chars from `PLUTAINER_GAME` (e.g., `t6zm` → `t6`). This drives:
 
-- **Default ports**: iw4x→28960, iw5→27016, t4/t5→28960, t6→4976, t7x→27017. SteamCMD games carry their port in the family table instead (7dtd→26900, hl2dm→27015), so `resolve_default_port` delegates rather than listing them.
-- **Engine config dirs** (where the game reads `+exec`'d cfg files): t4 → `runtime/gamefiles/main/`, iw5 → `runtime/gamefiles/admin/`, iw4x → `runtime/gamefiles/userraw/`, t7x → `runtime/gamefiles/zone/`, others → `runtime/plutonium/storage/<base_game>/`.
+- **Default ports**: iw4x→28960, iw5→27016, t4/t5→28960, t6→4976, t7x/boiii→27017. SteamCMD games carry their port in the family table instead (7dtd→26900, hl2dm→27015), so `resolve_default_port` delegates rather than listing them.
+- **Engine config dirs** (where the game reads `+exec`'d cfg files): t4 → `runtime/gamefiles/main/`, iw5 → `runtime/gamefiles/admin/`, iw4x → `runtime/gamefiles/userraw/`, t7x and boiii → `runtime/gamefiles/zone/`, others → `runtime/plutonium/storage/<base_game>/`.
 - **Command args**: iw5 uses `+set sv_config` and `+start_map_rotate`; others use `+exec` and `+map_rotate`. The map-rotate arg is opt-out family-wide via `PLUTAINER_MAP_ROTATE=false` (Plutonium + IW4x; T7x never had one).
 - **Game-file symlinks** differ per base game (see the `cod_stage_*` hooks in `lib/cod.sh`).
 

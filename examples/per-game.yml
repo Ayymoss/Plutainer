@@ -137,8 +137,9 @@ services:
       PLUTAINER_CONFIG_FILE: server.cfg
       PLUTAINER_PORT: "28964"
 
-  # ---------------------------------------------------------------- Alterware
-  # T7x — Black Ops III. No server key.
+  # -------------------------------------------------------------- Black Ops III
+  # T7x and BOIII are two clients for the same game, sharing one gamefiles
+  # mount. No server key for either.
   t7x-zm-1:
     image: ghcr.io/ayymoss/plutainer:latest
     container_name: t7x-zm-1
@@ -151,8 +152,26 @@ services:
       PLUTAINER_GAME: t7x
       PLUTAINER_CONFIG_FILE: server_zm.cfg
       PLUTAINER_PORT: "27017"
-      # On T7x, PLUTAINER_MOD is a Steam Workshop ID:
+      # On Black Ops III, PLUTAINER_MOD is a Steam Workshop ID:
       # PLUTAINER_MOD: "2833912385"
+
+  # BOIII — the same game, the same mount, a different client. Workshop maps
+  # live in usermaps/ inside the gamefiles mount and are picked up from there.
+  boiii-zm-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: boiii-zm-1
+    restart: unless-stopped
+    ports: ["27018:27018/udp"]
+    volumes:
+      - /opt/game-files/T7xServerFiles:/home/plutainer/gamefiles:ro
+      - ./boiii-zm-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: boiii
+      PLUTAINER_CONFIG_FILE: server_zm.cfg
+      PLUTAINER_PORT: "27018"
+      # Stops Plutainer re-fetching boiii.exe AND stops BOIII's own in-game
+      # updater, which is what you want if you run a build of your own:
+      # PLUTAINER_AUTO_UPDATE: "false"
 
   # -------------------------------------------------------------------- CoD4x
   # Modern Warfare. Multiplayer only, amd64 only. No Plutonium-style key, but

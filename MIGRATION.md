@@ -122,7 +122,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-You should see a fresh boot ending in `Starting Plutonium <game> Server: ...` (or the equivalent for IW4x/Alterware) followed by the game process. Healthcheck flips to `healthy` once RCON responds.
+You should see a fresh boot ending in `Starting Plutonium <game> Server: ...` (or the equivalent for IW4x, T7x, BOIII and CoD4x) followed by the game process. Healthcheck flips to `healthy` once RCON responds.
 
 ---
 

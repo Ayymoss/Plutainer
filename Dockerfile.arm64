@@ -58,7 +58,7 @@ WORKDIR /build/iw4x-launcher
 # is the only way to get one, and it is periodically broken by upstream changes
 # we cannot pin around from here (currently iw4x/launcher#76: their pregenerated
 # ODB sources are stale relative to their own libodb constraint). Failing the
-# whole arm64 image over it would take Plutonium T4/T5/T6/IW5 and Alterware T7x
+# whole arm64 image over it would take Plutonium T4/T5/T6/IW5, T7x and BOIII
 # down with it, none of which need this binary. So record the failure and let
 # iw4xentry.sh refuse only iw4x, at runtime, with an explanation.
 # IW4X_LAUNCHER_REF only exists to key the layer cache on upstream's HEAD. The

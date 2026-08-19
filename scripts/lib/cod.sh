@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # The `cod` family: Quake-derived servers Plutainer installs and runs itself —
-# Plutonium (T4/T5/T6/IW5), IW4x, Alterware (T7x) and CoD4x.
+# Plutonium (T4/T5/T6/IW5), IW4x, T7x, BOIII and CoD4x.
 #
 # One entry script (games/codentry.sh) serves all ten games; what differs
 # between them lives in the table below and in the hook functions beneath it.
@@ -366,8 +366,8 @@ cod_resolve_admin_endpoint() {
 #
 # Fields set by cod_resolve_game:
 #
-#   COD_ENGINE            plutonium | iw4x | alterware | cod4x
-#   BASE_GAME             t4 | t5 | t6 | iw5 | iw4x | t7x | cod4x
+#   COD_ENGINE            plutonium | iw4x | t7x | boiii | cod4x
+#   BASE_GAME             t4 | t5 | t6 | iw5 | iw4x | t7x | boiii | cod4x
 #   COD_DEFAULT_PORT      port when PLUTAINER_PORT is unset
 #   COD_SEED_KEY          seed-configs/<key>, empty for no seed bundle
 #   COD_SEED_ASSET_ROOT   where non-cfg seed files land
@@ -379,7 +379,7 @@ cod_resolve_admin_endpoint() {
 #
 # Games this family serves. derive_family() consults this, so adding a game is
 # a change to this file and nothing else.
-COD_GAMES=(t4mp t4sp t5mp t5sp t6mp t6zm iw5mp iw4x t7x cod4x)
+COD_GAMES=(t4mp t4sp t5mp t5sp t6mp t6zm iw5mp iw4x t7x boiii cod4x)
 
 cod_is_known_game() {
   local candidate="$1" game
@@ -429,8 +429,18 @@ cod_resolve_game() {
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/userraw"
       ;;
     t7x)
-      COD_ENGINE="alterware"; BASE_GAME="t7x";  COD_DEFAULT_PORT=27017
-      COD_LABEL="Alterware T7x (Black Ops III)"
+      COD_ENGINE="t7x";       BASE_GAME="t7x";  COD_DEFAULT_PORT=27017
+      COD_LABEL="T7x (Black Ops III)"
+      COD_SEED_KEY="t7x"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
+      COD_SEED_CFG_ROOT="zone"
+      ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone"
+      ;;
+    boiii)
+      # Same game, same game files, same config dir and the same seed bundle as
+      # t7x — a second client for Black Ops III rather than a second game. Only
+      # the binary and its launch flags differ.
+      COD_ENGINE="boiii";     BASE_GAME="boiii"; COD_DEFAULT_PORT=27017
+      COD_LABEL="BOIII (Black Ops III)"
       COD_SEED_KEY="t7x"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
       COD_SEED_CFG_ROOT="zone"
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone"
@@ -453,7 +463,7 @@ cod_resolve_game() {
 
 # Where the game looks for cfg files inside the active mod (fs_game), if
 # PLUTAINER_MOD is set. Empty when no mod, or when the family has no such
-# concept — Alterware's MOD is a Steam Workshop ID, not a path.
+# concept — on Black Ops III the MOD is a Steam Workshop ID, not a path.
 cod_resolve_mod_config_dir() {
   MOD_CONFIG_DIR=""
   [[ -z "${PLUTAINER_MOD:-}" ]] && return 0
@@ -609,7 +619,7 @@ cod_update_iw4x() {
   This image was built for an architecture upstream does not publish a launcher
   binary for, and building it from source failed. Tracked as iw4x/launcher#76.
   Options: run iw4x on an amd64 host, or use a different PLUTAINER_GAME —
-  Plutonium (t4/t5/t6/iw5) and Alterware (t7x) are unaffected."
+  Plutonium (t4/t5/t6/iw5) and Black Ops III (t7x/boiii) are unaffected."
   fi
 
   if [[ ! -f "$launcher" || "$src" -nt "$launcher" ]]; then
@@ -658,13 +668,18 @@ cod_launch_iw4x() {
   cod_append_map_rotate +map_rotate
 }
 
-# --- Alterware (T7x) -------------------------------------------------------
+# --- Black Ops III: T7x and BOIII -------------------------------------------
+#
+# Two separate clients for the same game. They share the game files, the engine
+# config dir (zone/) and the seed bundle, and differ only in which binary is
+# fetched and how it is launched — so the staging is written once and both
+# engines point at it.
 
-cod_stage_t7x() {
+cod_stage_bo3() {
   link_files "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" \
     codlogo.bmp machinecfg steam_api64.dll steamclient64.dll tier0_s64.dll vstdlib_s64.dll
 
-  # T7x decides it is a dedicated server by checking which executables exist:
+  # Both decide they are a dedicated server by checking which executables exist:
   #   is_server = has_flag("dedicated") || (!has_client && has_server)
   # Under Wine, flag detection via GetCommandLineW() can be unreliable, so only
   # the server binary is linked, guaranteeing the fallback path fires.
@@ -677,9 +692,20 @@ cod_stage_t7x() {
 
   # zone/ is the engine config dir, so real dir + symlinked contents.
   link_dir_contents "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" zone
+
+  # Workshop maps, if the user mounted any. Optional and usually absent, so it
+  # is tested rather than left to link_dir_contents' warning — and mirrored
+  # rather than symlinked at the top level so a map can also be dropped
+  # straight into the volume.
+  if [[ -d "$PLUTAINER_SOURCE_DIR/usermaps" ]]; then
+    link_dir_contents "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" usermaps
+  fi
 }
 
-cod_update_alterware() {
+cod_stage_t7x()   { cod_stage_bo3; }
+cod_stage_boiii() { cod_stage_bo3; }
+
+cod_update_t7x() {
   local exe="$PLUTAINER_GAMEFILES_DIR/t7x.exe"
   if [[ -f "$exe" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
     echo "Skipping T7x update because PLUTAINER_AUTO_UPDATE is set to 'false'."
@@ -694,7 +720,7 @@ cod_update_alterware() {
   wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" https://master.bo3.eu/t7x/t7x.exe
 }
 
-cod_launch_alterware() {
+cod_launch_t7x() {
   COD_WORKDIR="$PLUTAINER_GAMEFILES_DIR"
   # `-headless` makes t7x skip Sys_CreateConsole and print to stdout instead of
   # building a Win32 console window, so no X display is needed. Without it the
@@ -711,6 +737,59 @@ cod_launch_alterware() {
   )
   cod_append_extra_args
   # T7x has never had a map-rotate argument.
+}
+
+BOIII_BINARY_URL="https://r2.ezz.lol/boiii/boiii.exe"
+
+cod_update_boiii() {
+  local exe="$PLUTAINER_GAMEFILES_DIR/boiii.exe"
+  if [[ -f "$exe" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
+    echo "Skipping BOIII update because PLUTAINER_AUTO_UPDATE is set to 'false'."
+    return 0
+  fi
+  if [[ -f "$exe" ]]; then
+    echo "Checking for BOIII updates..."
+  else
+    echo "First container run detected. Downloading BOIII... This may take a moment."
+  fi
+  # wget -N is timestamping: it only downloads when upstream is newer. Note that
+  # this replaces boiii.exe, so a hand-built binary in the volume needs
+  # PLUTAINER_AUTO_UPDATE=false to survive a restart.
+  wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" "$BOIII_BINARY_URL"
+}
+
+cod_launch_boiii() {
+  COD_WORKDIR="$PLUTAINER_GAMEFILES_DIR"
+
+  # `-headless` does the same job here as it does for t7x: no Win32 console
+  # window, so no X display. `-quiet-crash` suppresses the crash dialog, which
+  # nothing can dismiss in a container. `-watchdog` starts BOIII's own hang
+  # detector, which reports a wedged script VM to the log instead of leaving a
+  # server that holds its port and answers nothing.
+  COD_LAUNCH_CMD=(
+    wine boiii.exe
+    -headless
+    -dedicated
+    -quiet-crash
+    -watchdog
+  )
+
+  # BOIII ships its own updater, which is separate from the download above and
+  # runs inside the game. It leaves boiii.exe alone unless asked, but it does
+  # replace the data files next to it, so PLUTAINER_AUTO_UPDATE=false turns off
+  # both halves rather than only the one Plutainer controls.
+  if [[ "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
+    COD_LAUNCH_CMD+=(-noupdate)
+  fi
+
+  COD_LAUNCH_CMD+=(
+    +set fs_game "${PLUTAINER_MOD:-}"
+    +set net_port "$ACTIVE_PORT"
+    +set logfile "2"
+    +exec "$CONFIG_FILE"
+  )
+  cod_append_extra_args
+  cod_append_map_rotate +map_rotate
 }
 
 # --- CoD4x -----------------------------------------------------------------
@@ -730,7 +809,7 @@ cod_update_cod4x() {
   [[ -x "$COD4X_ASSET_DIR/$COD4X_BINARY" ]] || hold_indefinitely \
     "CoD4x is not available in this image (no ${COD4X_BINARY}).
   Upstream publishes a 32-bit x86 Linux binary only, so CoD4x cannot run on this
-  architecture. Plutonium, IW4x and Alterware titles are unaffected."
+  architecture. Plutonium, IW4x and Black Ops III titles are unaffected."
 
   local dest="$PLUTAINER_GAMEFILES_DIR/$COD4X_BINARY"
 

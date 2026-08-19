@@ -6,7 +6,7 @@
 # There are exactly two families, and they are *platforms* rather than engines:
 #
 #   cod     Quake-derived servers Plutainer installs and runs itself
-#           (Plutonium, IW4x, Alterware, CoD4x). You supply the game files.
+#           (Plutonium, IW4x, T7x, BOIII, CoD4x). You supply the game files.
 #   steam   Servers SteamCMD installs (7DTD, CS2, L4D2, HL2:DM). You supply
 #           nothing.
 #
@@ -158,7 +158,7 @@ derive_family() {
 # tried most-specific first, so a game inherits its engine's behaviour and
 # overrides only what genuinely differs:
 #
-#   cod_launch_t7x   ->  cod_launch_alterware
+#   cod_stage_t6zm   ->  cod_stage_t6
 #   steam_seed_cs2   ->  steam_seed_srcds
 #
 # Run <family>_<hook>_<suffix> for the first suffix that exists; return 1 if

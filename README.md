@@ -30,7 +30,8 @@ services:
 | Black Ops II (T6) | `t6mp`, `t6zm` | Plutonium. Needs a server key |
 | Modern Warfare 3 (IW5) | `iw5mp` | Plutonium. Needs a server key |
 | Modern Warfare 2 (IW4x) | `iw4x` | No key. amd64 only |
-| Black Ops III (T7x) | `t7x` | Alterware. No key |
+| Black Ops III (T7x) | `t7x` | No key |
+| Black Ops III (BOIII) | `boiii` | No key. Same game files as `t7x` |
 | Modern Warfare (CoD4x) | `cod4x` | Multiplayer only, amd64 only. Needs a [masterserver token](docs/games.md#cod4x-modern-warfare) to appear in the server browser |
 | 7 Days to Die | `7dtd` | Native Linux server, amd64 only. Installed by SteamCMD; no gamefiles mount |
 | Counter-Strike 2 | `cs2` | Source 2, amd64 only. Installed by SteamCMD; ~67 GB. Needs a [GSLT](docs/games.md#the-source-games-cs2-l4d2-hl2dm) to be listed |
