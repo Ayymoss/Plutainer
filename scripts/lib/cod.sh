@@ -59,9 +59,14 @@ cod_resolve_config_path() {
 # BOIII reads boiii/, which it unpacks from its own binary, so seeding t7x/
 # next to it would put a directory in the volume that nothing ever opens.
 #
+# COD_SEED_SKIP_CFGS names cfg files the bundle carries that this game cannot
+# use — a shared bundle is not the same as a shared game mode.
+#
 # Args: <game-key> <asset_root> <cfg_root_rel>
 seed_configs() {
   local game="$1" asset_root="$2" cfg_root_rel="${3:-}"
+  local -a skip_cfgs=()
+  read -ra skip_cfgs <<< "${COD_SEED_SKIP_CFGS:-}"
   local src="/home/plutainer/.plutainer/seed-configs/${game}"
   [[ -d "$src" ]] || return 0
   mkdir -p "$asset_root" "$CONFIG_SOT_DIR"
@@ -75,7 +80,13 @@ seed_configs() {
     parent="$(dirname "$rel")"
     [[ "$parent" == "." ]] && parent=""
     if [[ "$rel" == *.cfg && "$parent" == "$cfg_root_rel" ]]; then
-      dest="$CONFIG_SOT_DIR/$(basename "$rel")"
+      local base skip="" candidate
+      base="$(basename "$rel")"
+      for candidate in ${skip_cfgs[@]+"${skip_cfgs[@]}"}; do
+        [[ "$base" == "$candidate" ]] && { skip="yes"; break; }
+      done
+      [[ -n "$skip" ]] && continue
+      dest="$CONFIG_SOT_DIR/$base"
     elif [[ "${COD_SEED_CFG_ONLY:-}" == "true" ]]; then
       continue
     else
@@ -383,6 +394,7 @@ cod_resolve_admin_endpoint() {
 #   COD_SEED_ASSET_ROOT   where non-cfg seed files land
 #   COD_SEED_CFG_ROOT     subdir within the bundle whose top-level *.cfg lift
 #   COD_SEED_CFG_ONLY     "true" to take only those cfgs and drop the rest
+#   COD_SEED_SKIP_CFGS    cfg basenames in the bundle this game cannot use
 #   COD_LABEL             name used in log lines
 #
 # ENGINE_CONFIG_DIR and MOD_CONFIG_DIR are set here too, since they are per-game
@@ -407,6 +419,7 @@ cod_resolve_game() {
   COD_SEED_ASSET_ROOT=""
   COD_SEED_CFG_ROOT=""
   COD_SEED_CFG_ONLY=""
+  COD_SEED_SKIP_CFGS=""
 
   case "$game" in
     t4mp|t4sp)
@@ -456,8 +469,11 @@ cod_resolve_game() {
       COD_SEED_KEY="t7x"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
       COD_SEED_CFG_ROOT="zone"
       # The bundle's t7x/ tree is T7x's data directory; BOIII unpacks its own
-      # boiii/ from the binary and never reads it.
+      # boiii/ from the binary and never reads it. Campaign is dropped for the
+      # same reason a config is not seeded for a mode that cannot be hosted:
+      # BOIII runs multiplayer and zombies only.
       COD_SEED_CFG_ONLY="true"
+      COD_SEED_SKIP_CFGS="server_cp.cfg"
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone"
       ;;
     cod4x)

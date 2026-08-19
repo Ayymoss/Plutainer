@@ -12,7 +12,7 @@ What each game needs from you, and what Plutainer supplies. Find your game, chec
 | Modern Warfare 3 | `iw5mp` | yes | 27016 | `server.cfg` |
 | Modern Warfare 2 | `iw4x` | no | 28960 | `server.cfg`, `serverlan.cfg`, `partyserver.cfg`, `partyserverlan.cfg` |
 | Black Ops III | `t7x` | no | 27017 | `server.cfg`, `server_zm.cfg`, `server_cp.cfg` |
-| Black Ops III | `boiii` | no | 27017 | `server.cfg`, `server_zm.cfg`, `server_cp.cfg` |
+| Black Ops III | `boiii` | no | 27017 | `server.cfg`, `server_zm.cfg` |
 | Modern Warfare | `cod4x` | token, to be listed | 28960 | `server.cfg` |
 | 7 Days to Die | `7dtd` | no | 26900 | `serverconfig.xml`, from the installed server |
 | Counter-Strike 2 | `cs2` | token, to be listed | 27015 | `server.cfg` |
@@ -120,6 +120,8 @@ T5 also only answers status queries from localhost, so external query tools see 
 ### T7x and BOIII (Black Ops III)
 
 Two independent clients for the same game, and either can host it. They share the gamefiles mount, the `zone/` config directory and the bundled configs, so switching one server between them is a one-line change to `PLUTAINER_GAME`. Run both at once if you like; they are separate containers with separate volumes.
+
+BOIII hosts multiplayer and zombies only, so it is seeded without `server_cp.cfg`; t7x still gets it.
 
 Both launch with `-headless`, which is what removes the need for a virtual display — without it the server hangs on window creation and never binds its port. `-dedicated` is passed separately and is also required.
 
