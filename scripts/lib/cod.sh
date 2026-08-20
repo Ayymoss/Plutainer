@@ -707,6 +707,58 @@ cod_update_boiii() {
   wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" "$BOIII_BINARY_URL"
 }
 
+# The build published at BOIII_BINARY_URL cannot run a headless dedicated
+# server. Two independent blockers, both fixed upstream but neither in this
+# artifact, which was measured on a clean volume on 2026-08-20:
+#
+#   * the launcher-UI check runs before the client/server split, so a server
+#     fails a check for a file only a client ever downloads. It exits rc=1
+#     having blamed the network, which is not the cause.
+#   * the headless console calls AllocConsole() at static-init time. Under Wine
+#     with no display that starts conhost.exe and the process blocks on its
+#     pipe forever: one thread, 0% CPU, no UDP socket, nothing in `docker logs`.
+#
+# The second is why this refuses rather than warns. A warning would be followed
+# by a container that sits at "Up" indefinitely, answering nothing and printing
+# nothing, which is the least debuggable failure this image can produce.
+#
+# Pinned by the hash of the *known-bad* artifact rather than of a known-good
+# one, so the day anything else is published the check stops firing on its own
+# and no release of this image is needed to unblock it.
+BOIII_KNOWN_BAD_SHA256="06d897a6945a5fe8e8dd8312dcda34f963cf188dd596bc453855309c11ea97c7"
+
+cod_validate_boiii() {
+  local exe="$PLUTAINER_GAMEFILES_DIR/boiii.exe"
+
+  [[ -f "$exe" ]] || hold_indefinitely     "boiii.exe is missing from $PLUTAINER_GAMEFILES_DIR and could not be downloaded from $BOIII_BINARY_URL."
+
+  local sum
+  sum="$(sha256sum "$exe" | cut -d' ' -f1)"
+  [[ "$sum" == "$BOIII_KNOWN_BAD_SHA256" ]] || return 0
+
+  hold_indefinitely "The boiii.exe published at $BOIII_BINARY_URL cannot run a dedicated server in
+a container, so this server has not been started.
+
+It has two faults, both fixed in the client's source but neither in the build
+being served:
+
+  * it checks for a launcher file that only a game client ever downloads, then
+    exits reporting that it needs an internet connection. The connection is
+    not the problem.
+  * in headless mode it tries to open a Windows console. There is no display
+    here, so it waits on that console forever - no map, no open port, and no
+    output at all.
+
+Until a newer build is published, supply your own boiii.exe:
+
+  1. Build it, or obtain a build that carries both fixes.
+  2. Put it at <your app volume>/runtime/gamefiles/boiii.exe
+  3. Set PLUTAINER_AUTO_UPDATE=false, or this image will download over it
+     again on the next start.
+
+Set PLUTAINER_AUTO_UPDATE=false and restart once that binary is in place."
+}
+
 cod_launch_boiii() {
   COD_WORKDIR="$PLUTAINER_GAMEFILES_DIR"
 

@@ -120,6 +120,14 @@ T5 also only answers status queries from localhost, so external query tools see 
 
 Black Ops III is served by **Ezz BOIII**. If you ran `t7x` before, set `PLUTAINER_GAME=boiii` and change nothing else: the gamefiles mount, `app/configs/` and the `zone/` config directory are the same. A `t7x` tag now refuses to start and says so.
 
+> **The currently published `boiii.exe` cannot run a dedicated server, and Plutainer will refuse to start it.**
+>
+> The build served from `r2.ezz.lol` has two faults, neither of which is in the client's source any more: it checks for a launcher file that only a game client downloads and then exits blaming your internet connection, and in headless mode it waits forever on a Windows console that a container has no display for. The second produces no output at all, so rather than leave you with a container that is `Up` and silent, Plutainer stops and explains.
+>
+> Until a newer build is published, put a `boiii.exe` carrying both fixes at `app/runtime/gamefiles/boiii.exe` and set `PLUTAINER_AUTO_UPDATE=false`, or the next start downloads over it.
+>
+> The check is keyed to the hash of that one known-bad build, so it stops applying by itself the moment anything else is published — no image update needed.
+
 Multiplayer and zombies only, so no campaign config is seeded.
 
 It launches with `-headless`, which is what removes the need for a virtual display — without it the server hangs on window creation and never binds its port. `-dedicated` is passed separately and is also required.
