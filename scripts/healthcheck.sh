@@ -119,16 +119,24 @@ import sys
 sys.path.insert(0, '${SCRIPT_DIR}')
 from protocols import quake3
 
-# Engines disagree on the key's case: iw4x/t4/t5/t6 answer 'mapname', t7x
+# Engines disagree on the key's case: iw4x/t4/t5/t6 answer 'mapname', BO3
 # answers 'MapName'. Match case-insensitively rather than guessing per game.
 MAP_KEYS = ('mapname', 'sv_mapname')
 
 # getstatus first, getinfo second, and the order matters both ways:
 #   * IW5 (MW3) does not answer getstatus at all — only getinfo.
-#   * T7x answers both, but its infoResponse advertises the lobby's map while
+#   * BO3 answers both, but its infoResponse advertises the lobby's map while
 #     statusResponse reports the map actually running, so preferring getinfo
 #     would report the wrong map on a healthy server.
 QUERIES = ('getstatus', 'getinfo')
+
+# A map name alone is not proof the server is hosting one. Measured on BO3
+# after a drop: the game shut down, the lobby could not be rebuilt, no map was
+# ever hosted again — and getinfo kept answering with the LAST map's name
+# while sv_running read 0. The port answers, the reply looks right, and the
+# server is dead. Where the engine reports sv_running, believe it over the
+# name; engines that do not report it are unaffected.
+RUNNING_KEYS = ('sv_running',)
 
 server = quake3.Quake3Server('127.0.0.1:${HEALTHCHECK_PORT}')
 
@@ -138,6 +146,16 @@ for query in QUERIES:
         values = server.query_values(query)
     except Exception as e:
         problems.append('%s: %s' % (query, e))
+        continue
+
+    running = None
+    for key, value in values.items():
+        if key.strip().lower() in RUNNING_KEYS:
+            running = (value or '').strip()
+
+    if running is not None and running in ('0', 'false'):
+        problems.append('%s: answered but sv_running is %s — no map is hosted'
+                        % (query, running))
         continue
 
     for key, value in values.items():

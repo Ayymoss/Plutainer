@@ -20,7 +20,7 @@ Valid names per game are in [Games](games.md#at-a-glance). If you expected Pluta
 
 ### `PLUTO_SERVER_KEY is not set`
 
-T4, T5, T6 and IW5 need a key from <https://platform.plutonium.pw/serverkeys>. IW4x, T7x and CoD4x don't.
+T4, T5, T6 and IW5 need a key from <https://platform.plutonium.pw/serverkeys>. IW4x, BOIII and CoD4x don't.
 
 ### `mkdir: cannot create directory … Permission denied`
 
@@ -38,7 +38,7 @@ Your volume or your variables are from the old image. See [MIGRATION.md](../MIGR
 
 ### First start is taking forever
 
-Expected. IW4x downloads 1–2 GB, Plutonium ~500 MB, T7x a few MB, CoD4x nothing. `docker logs -f` shows progress. The healthcheck won't judge for five minutes.
+Expected. IW4x downloads 1–2 GB, Plutonium ~500 MB, BOIII a few MB, CoD4x nothing. `docker logs -f` shows progress. The healthcheck won't judge for five minutes.
 
 ---
 

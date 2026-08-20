@@ -11,7 +11,7 @@ You need three things:
 3. **A server key or token**, depending on the game:
    - **T4, T5, T6, IW5** need a Plutonium server key, free from <https://platform.plutonium.pw/serverkeys>. The server will not start without one.
    - **CoD4x** needs a masterserver token from <http://cod4master.cod4x.ovh> to be listed in the server browser. It runs without one, but nobody will find it.
-   - **IW4x, T7x and the SteamCMD games** need no key or token.
+   - **IW4x, BOIII and the SteamCMD games** need no key or token.
 
 ## 1. Put the game files somewhere
 

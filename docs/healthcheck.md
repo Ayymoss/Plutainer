@@ -22,7 +22,7 @@ The address is tried as `127.0.0.1` first, then the container's own IP. Source d
 
 **No RCON password required.** The engine answers these queries from the same connectionless handler, in the same server frame loop, that answers RCON `status`, and reports the map from the same cvar — so a stalled server or one that has lost its map fails this check exactly as it would have failed an RCON-based one, by not replying or by replying with no map.
 
-Why both queries: IW5 and T5 only answer `getinfo`; everything else answers `getstatus`, which is preferred because T7x's `getinfo` reports the *lobby's* map rather than the running one.
+Why both queries: IW5 and T5 only answer `getinfo`; everything else answers `getstatus`, which is preferred because on Black Ops III `getinfo` reports the *lobby's* map rather than the running one.
 
 Disable with `PLUTAINER_HEALTHCHECK=false`.
 

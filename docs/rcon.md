@@ -6,7 +6,7 @@ Sending commands to a running server.
 
 | Game | Protocol | Port | Password comes from |
 | --- | --- | --- | --- |
-| Plutonium, IW4x, T7x, CoD4x | Quake3 RCON (UDP) | game port | `rcon_password` in your cfg |
+| Plutonium, IW4x, BOIII, CoD4x | Quake3 RCON (UDP) | game port | `rcon_password` in your cfg |
 | Half-Life 2: Deathmatch | Source RCON (TCP) | game port | `rcon_password` in your cfg |
 | 7 Days to Die | Telnet console (TCP) | `TelnetPort`, default 8081 | `TelnetPassword` in `serverconfig.xml` |
 
@@ -72,7 +72,7 @@ From outside the container it depends on the game:
 
 | Game | Off-container RCON |
 | --- | --- |
-| T4, IW5, IW4x, T7x, CoD4x | allowed once a password is set |
+| T4, IW5, IW4x, BOIII, CoD4x | allowed once a password is set |
 | **T5, T6** | only from whitelisted addresses |
 
 For T5/T6 Plutainer automatically whitelists the container's Docker gateway at startup, which is the address a sidecar admin tool appears to come from. If your admin tool is on **another machine**, add it:
