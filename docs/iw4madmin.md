@@ -84,6 +84,17 @@ In `IW4MAdmin/Configuration/IW4MAdminSettings.json`. Address the servers by your
 
 `ManualLogPath` matches the mount path above. Because the mount was taken through `logs/`, Docker resolved Plutainer's stable symlink at mount time and IW4MAdmin sees a plain file — which is what it needs.
 
+### 7 Days to Die Telnet endpoint
+
+7DTD uses Telnet on TCP port 8081 instead of RCON on the game port. Connect IW4MAdmin through a stable private host address and a published Telnet port, just as the other games use the host address and their published ports:
+
+```yaml
+ports:
+  - "${SEVENDTD_TELNET_BIND:-127.0.0.1}:8081:8081/tcp"
+```
+
+Leave the loopback default when the management client runs on the host. For IW4MAdmin in Docker, set `SEVENDTD_TELNET_BIND` to a private LAN, VPN, or dedicated Docker bridge address reachable from its container, then use that address with port `8081` in `IW4MAdminSettings.json`. Do not store the 7DTD container's internal IP and do not expose Telnet on a public interface.
+
 ### Parsers and log names
 
 | Game | Parser | Log file |
@@ -97,6 +108,7 @@ In `IW4MAdmin/Configuration/IW4MAdminSettings.json`. Address the servers by your
 | IW4x | `IW4x Parser` | `games_mp.log` |
 | T7x | `BOIII Parser` | `games_mp.log` / `games_zm.log` |
 | CoD4x | `CoD4x Parser` | `games_mp.log` |
+| 7 Days to Die | `7 Days to Die Parser` | `server-output.log` |
 
 IW4MAdmin needs a pre-existing `IW4MAdminSettings.json` before its container will start — it won't generate one unattended.
 

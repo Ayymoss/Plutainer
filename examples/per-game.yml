@@ -192,6 +192,10 @@ services:
     ports:
       - "26900:26900/tcp"
       - "26900-26903:26900-26903/udp"
+      # Telnet is RCON for 7DTD. Keep it private: leave the loopback default for
+      # host-side tools, or set SEVENDTD_TELNET_BIND to a stable private host IP
+      # that a containerized IW4MAdmin can reach. Never use a public bind here.
+      - "${SEVENDTD_TELNET_BIND:-127.0.0.1}:8081:8081/tcp"
     volumes:
       - ./7dtd-1:/home/plutainer/app
     environment:

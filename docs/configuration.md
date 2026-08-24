@@ -96,6 +96,15 @@ ports:
   - "26900-26903:26900-26903/udp"
 ```
 
+Its Telnet RCON console uses TCP port 8081. Publish that port only on a private host address. Loopback is safest for host-side tools; a containerized IW4MAdmin needs a stable private host address it can reach:
+
+```yaml
+ports:
+  - "${SEVENDTD_TELNET_BIND:-127.0.0.1}:8081:8081/tcp"
+```
+
+Do not bind Telnet to a public interface. Set `SEVENDTD_TELNET_BIND` to a private LAN, VPN, or dedicated Docker bridge address and use that same address in the management client.
+
 Nebula uses one TCP port:
 
 ```yaml
