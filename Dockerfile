@@ -1,3 +1,19 @@
+# DSP's client-side Steam API refuses to start without a desktop Steam client.
+# A dedicated container should not store a user's Steam credentials, so ship a
+# pinned, checksum-verified API-compatible replacement for the owned game files
+# the user mounts. Only the x64 regular DLL and its license enter the final
+# image; the game mount itself stays untouched.
+FROM alpine:3.22 AS nebula-steam-api
+ARG GBE_JOB=4247811307
+ARG GBE_SHA256=0cfe547ea82071953cf99daffa3bd11bb468eec0e400961e7e33e4dc36674ea8
+RUN apk add --no-cache wget \
+    && mkdir -p /out \
+    && wget -q -O /out/steam_api64.dll "https://gitlab.com/Mr_Goldberg/goldberg_emulator/-/jobs/${GBE_JOB}/artifacts/raw/release/steam_api64.dll" \
+    && echo "${GBE_SHA256}  /out/steam_api64.dll" | sha256sum -c - \
+    && wget -q -O /out/LICENSE "https://gitlab.com/Mr_Goldberg/goldberg_emulator/-/raw/master/LICENSE" \
+    && test -s /out/steam_api64.dll \
+    && test -s /out/LICENSE
+
 # Arch base ships pure-WoW64 wine (since wine 10.8-2, June 2025), so 32-bit
 # Windows binaries run inside a 64-bit Wine process and use modern 64-bit Linux
 # socket syscalls instead of the i386 socketcall(2) multiplexer. Docker 29.4.2's
@@ -12,6 +28,7 @@ RUN printf '[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.con
 
 RUN pacman -Syu --noconfirm \
         wine \
+        xorg-server-xvfb \
         lib32-glibc \
         lib32-gcc-libs \
         python \
@@ -33,9 +50,9 @@ ENV WINEDLLOVERRIDES="mscoree,mshtml="
 USER plutainer
 WORKDIR /home/plutainer/.plutainer
 
-# No X server anywhere in the image: every server we run is headless. t7x needs
-# `-headless` for that (see alterentry.sh); wineboot only warns about the
-# missing display driver and still initialises the prefix.
+# Nebula uses Xvfb only as Wine's minimal display driver; Unity itself still
+# runs with `-batchmode -nographics`. Other games launch exactly as before.
+# wineboot does not need the display and merely warns while initialising.
 RUN wineboot -u && wineserver -w
 
 RUN wget https://github.com/mxve/plutonium-updater.rs/releases/latest/download/plutonium-updater-x86_64-unknown-linux-gnu.tar.gz -O plutonium-updater.tar.gz && \
@@ -102,15 +119,17 @@ COPY --chown=plutainer:plutainer seed-configs/ seed-configs/
 #
 # Deliberately NOT running `steamcmd.sh +quit` here to pre-bootstrap the Steam
 # client: that pulls a few hundred MB into $HOME which every CoD-only user would
-# then carry forever, and steamcmd self-updates on first run anyway. We just
-# removed 340 MB of Xvfb for the same reason. The cost is a slower first start
-# for SteamCMD games only.
+# then carry forever, and steamcmd self-updates on first run anyway. The cost
+# is a slower first start for SteamCMD games only.
 RUN mkdir -p steamcmd && \
     wget -qO steamcmd.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz && \
     tar -xzf steamcmd.tar.gz -C steamcmd && \
     rm steamcmd.tar.gz
 
 COPY --chown=plutainer:plutainer scripts/ .
+COPY --from=nebula-steam-api --chown=plutainer:plutainer \
+     /out/ \
+     /home/plutainer/.plutainer/nebula/steam-api/
 # Everything executable, rather than a list that silently rots as scripts move
 # between directories.
 RUN find . -type f -name '*.sh' -exec chmod +x {} + && chmod +x rcon-cli

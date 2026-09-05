@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Plutainer is a Docker image for running Plutonium, IW4x, Alterware and CoD4x dedicated game servers (Call of Duty titles: T4/WaW, T5/BO1, T6/BO2, IW5/MW3, IW4x/MW2, T7x/BO3, CoD4x/CoD4). It uses Wine on Arch Linux to run the Windows game server binaries, configured entirely via environment variables. CoD4x is the exception: upstream ships a native Linux server, so it runs directly with no Wine (and is therefore amd64-only — the binary is 32-bit x86).
+Plutainer is a Docker image for running Plutonium, IW4x, Alterware and CoD4x dedicated game servers (Call of Duty titles: T4/WaW, T5/BO1, T6/BO2, IW5/MW3, IW4x/MW2, T7x/BO3, CoD4x/CoD4), native SteamCMD servers, and Dyson Sphere Program through the Nebula multiplayer mod. It uses Wine on Arch Linux for Windows game binaries and native Linux executables where upstream supplies them, configured through environment variables. CoD4x is amd64-only because its native server binary is 32-bit x86.
 
 ## Documentation layout
 
@@ -69,6 +69,8 @@ amd64 is required. **arm64 is best-effort** (`optional: true` + `continue-on-err
 
 **The SteamCMD family is amd64-only**: Valve ships SteamCMD as x86_64 binaries only, so `Dockerfile.arm64` does not install it. `steamentry.sh` tests `-x` on `steamcmd.sh` and `hold_indefinitely`s if absent — a capability check, not an arch check, so the family starts working on arm64 the day an arm64 SteamCMD exists, with no code change.
 
+**The Nebula family is tested on amd64 and best-effort on arm64.** It runs the supplied x86_64 Windows DSP client through Wine and overlays BepInEx/Nebula from Thunderstore. Hangover should translate the same client on arm64, but that combination does not yet have equivalent live coverage.
+
 **Degradation.** `Dockerfile.arm64` lets the launcher build fail, writing the `.unavailable` marker in its place. Stage 3 copies `/out/` as a **directory**, not a file — a file `COPY` of a missing path aborts the build, which is the coupling being avoided; the marker also keeps the directory non-empty. The `cod_update_iw4x` hook tests `-x` on the binary and `hold_indefinitely`s if absent. That is a capability check, not an arch check, so iw4x starts working again as soon as an image ships a binary, with no code change.
 
 **`IW4X_LAUNCHER_REF` is load-bearing — do not remove it.** Both Dockerfiles fetch the launcher inside a `RUN`, so the layer cache key never changes on its own and upstream changes stay invisible until eviction. CI resolves the upstream ref (release tag for amd64, commit SHA for arm64) and passes it purely to key the cache. This matters most on arm64, where the `|| { … }` fallback makes the step exit 0 on failure, so a failed build caches as a success and would keep shipping the marker indefinitely.
@@ -88,14 +90,14 @@ scripts/
   rcon-cli               # dispatches on protocol
   log-watcher.sh
   migrate-v1-to-v2.sh
-  games/                 # codentry.sh, steamentry.sh — one per family
-  lib/                   # core.sh, fs.sh, cod.sh, steam.sh
+  games/                 # codentry.sh, steamentry.sh, nebulaentry.sh — one per family
+  lib/                   # core.sh, fs.sh, cod.sh, steam.sh, nebula.sh
   protocols/             # one module per wire protocol
 ```
 
-**There are exactly two families, and they are platforms rather than engines.** `cod` is everything Plutainer installs and runs itself from game files you supply; `steam` is everything SteamCMD installs. Engine variation (plutonium / iw4x / alterware / cod4x, unity / srcds) lives *below* the family as a table field, because it does not change how Plutainer treats the server — a Plutonium T6 and a CoD4x server differ far less from each other than either does from a SteamCMD install.
+**There are exactly three families, and they are platforms rather than engines.** `cod` is everything Plutainer installs and runs itself from game files you supply; `steam` is everything SteamCMD installs anonymously; `nebula` overlays a managed Thunderstore/BepInEx stack onto user-supplied Dyson Sphere Program files. Engine variation (plutonium / iw4x / alterware / cod4x, unity / srcds) lives *below* the family when it does not change how Plutainer treats the server.
 
-Both families have the same shape: one entry script, one game table, and hooks resolved most-specific-first. Adding a game to either should touch that family's file and nothing else, and never add a branch to `entrypoint.sh`, `healthcheck.sh` or `rcon-cli`.
+Each family owns one entry script and one library. Table-driven families resolve hooks most-specific-first. Adding a game should stay inside its family and never add game-specific branches to `entrypoint.sh`, `healthcheck.sh` or `rcon-cli`.
 
 1. **`entrypoint.sh`** — Top-level dispatcher. Sources `lib/core.sh`, calls `detect_game_type` (requires `PLUTAINER_GAME`), `check_volume_version` (refuses v1 volumes), then `exec`s the family-specific entry script. On any failure: `hold_indefinitely` (sleep infinity) instead of exiting, to avoid restart loops.
 
@@ -159,7 +161,7 @@ Both families have the same shape: one entry script, one game table, and hooks r
 
    **SteamCMD's first contact is unreliable, so `app_update` is retried.** Its first run downloads its own client and re-execs; an `+app_update` issued before that settles fails with `Failed to install app '<id>' (Missing configuration)`. Measured on both 7DTD and HL2:DM in fresh containers, with the immediately following attempt succeeding. Pre-bootstrapping with `steamcmd.sh +quit` first — at runtime or at image build time — was tried and did **not** reliably prevent it. Three attempts, 5s apart; a genuinely broken install fails identically every time and still ends in the refusal.
 
-   **Not pre-bootstrapped at build time.** `steamcmd.sh +quit` in the Dockerfile would pull a few hundred MB of Steam client into `$HOME` that every CoD-only user carries forever — the same reason 340 MB of Xvfb was removed. The retry above is the trade.
+   **Not pre-bootstrapped at build time.** `steamcmd.sh +quit` in the Dockerfile would pull a few hundred MB of Steam client into `$HOME` that every CoD-only user carries forever. The retry above is the trade. Xvfb is present for Nebula because Wine needs a display driver even when Unity uses its null graphics device; other games do not launch through it.
 
    **Source 1 servers do not answer on loopback.** Measured on HL2:DM and L4D2 (CS2, oddly, does answer on loopback — another reason to try both rather than encode it): an identical A2S query times out on `127.0.0.1` and replies immediately on the container's own address, with the server healthy throughout; its RCON socket likewise `LISTEN`s on the container IP, not `0.0.0.0`. `plutainer_query_hosts` returns loopback then the container address, and both `healthcheck.sh` and `rcon-cli` try them in order rather than encoding which engine behaves which way.
 
@@ -179,26 +181,29 @@ Both families have the same shape: one entry script, one game table, and hooks r
 
    Its 32-bit ELF is only runnable here for the same reason CoD4x is — the Arch pure-WoW64 base sidesteps Docker's `socketcall(2)` seccomp block.
 
-4. **`lib/`** — The shared library, split so that a CoD change never requires reading the Steam helpers and vice versa. This is the main structural guard against the two platforms bleeding into each other:
+4. **`games/nebulaentry.sh`** — Dyson Sphere Program/Nebula entrypoint. The owned game install is mounted read-only, mirrored into `runtime/nebula/nebula/game/`, and overlaid with BepInEx plus the requested Nebula/extra-plugin dependency graphs by `install-thunderstore.py`. `PLUTAINER_NEBULA_VERSION` and every package in `PLUTAINER_NEBULA_MODS` accept `latest` or an exact version; latest roots re-walk their current metadata on every start so dependency-only updates are found. Its versioned state makes the extra-plugin list declarative: dropped roots and newly orphaned managed dependencies are removed, while configs and untracked manual plugins are preserved. The image also overlays its pinned, checksum-verified Goldberg `steam_api64.dll` into DSP's writable plugin path because the desktop game calls `SteamAPI_Init` in headless mode; never modify the source mount and never put Steam credentials in the container. The source mount's own BepInEx files are ignored so runtime updates never write through into the host install. The whole BepInEx config directory is linked to `app/configs/`; DSP's Documents directory is linked to `runtime/gamedata/nebula/`, which keeps `.dsv`, `.server`, and `player.key` persistent. Fresh volumes use `-newgame-cfg`, later starts use `-load-latest`, and an explicit save or new-game request wins. `launch_game_graceful_signal INT` translates the service's SIGTERM into Nebula's documented Ctrl+C save path, then the Nebula stop hook waits for both `_lastexit_` files to settle before terminating a stuck Wine wrapper.
+
+5. **`lib/`** — The shared library, split so that a family change does not require reading unrelated platform helpers. This is the main structural guard against the three platforms bleeding into each other:
 
     | File | Owns |
     | --- | --- |
     | `core.sh` | Volume paths, family detection, process lifecycle, the hook mechanism, and the dispatchers `healthcheck.sh`/`rcon-cli` use. Sources the other three. |
-    | `fs.sh` | `link_files`, `link_dir_contents`, `link_configs` — symlink hygiene, used by both families. |
+    | `fs.sh` | `link_files`, `link_dir_contents`, `link_configs` — symlink hygiene shared by the families. |
     | `cod.sh` | The cod game table plus its hooks: game-file staging, updaters, launch arguments, config layout, `rcon_password` parsing/writing, the T5/T6 whitelist. |
     | `steam.sh` | The steam game table plus its hooks: SteamCMD install/update, XML and cfg editing, launch arguments. |
+    | `nebula.sh` | The Nebula paths, read-only game mirror, Thunderstore overlay, BepInEx config storage, and DSP save layout. |
 
     Audited for coupling: **zero cross-family calls in either direction**. Anything both needed — the symlink helpers — was moved to `fs.sh` instead.
 
-    **Hooks (`plutainer_hook`, `plutainer_require_hooks`).** Both families name per-game behaviour `<family>_<hook>_<suffix>` and try suffixes most-specific-first, so a game inherits its engine's implementation and overrides only what genuinely differs — `steam_launch_args_cs2` exists, but CS2's seed/configure/stage come from `srcds`. That fallback deleted fifteen one-line pass-through functions and makes another Source game a pure table row. Hook names are strings, so `plutainer_require_hooks` verifies the mandatory ones resolve at startup and prints what it tried.
+    **Hooks (`plutainer_hook`, `plutainer_require_hooks`).** The table-driven cod and steam families name per-game behaviour `<family>_<hook>_<suffix>` and try suffixes most-specific-first, so a game inherits its engine's implementation and overrides only what genuinely differs — `steam_launch_args_cs2` exists, but CS2's seed/configure/stage come from `srcds`. Hook names are strings, so `plutainer_require_hooks` verifies the mandatory ones resolve at startup and prints what it tried.
 
-    Both family libraries are always loaded — `healthcheck.sh` and `rcon-cli` dispatch on `GAME_TYPE` at runtime and need either set available. The split is about where code is allowed to live, not about loading less of it.
+    All three family libraries are always loaded — `healthcheck.sh` and `rcon-cli` dispatch on `GAME_TYPE` at runtime and need every set available. The split is about where code is allowed to live, not about loading less of it.
 
     **`lib/core.sh`** key helpers:
    - Volume path constants: `PLUTAINER_APP_DIR`, `PLUTAINER_CONFIGS_DIR`, `PLUTAINER_RUNTIME_DIR`, `PLUTAINER_GAMEFILES_DIR`, `PLUTAINER_PLUTONIUM_DIR`, `PLUTAINER_SOURCE_DIR`, `PLUTAINER_STEAM_DIR`, `PLUTAINER_GAMEDATA_DIR`.
    - `hold_indefinitely <msg>`: print the error, then `exec sleep infinity` so the container stays `Up` instead of looping through restarts. Used for any startup validation failure.
    - `launch_game <cmd>...`: wraps the game invocation; on exit, sleeps 30s before letting the script exit, so docker's restart policy throttles to ~1 restart per 30s.
-   - `derive_family <game-tag>`: returns `cod` or `steam`, by asking each family whether it knows the tag. Neither list is duplicated here, so adding a game touches one file.
+   - `derive_family <game-tag>`: returns `cod`, `steam`, or `nebula`, by asking each family whether it knows the tag. No list is duplicated here, so adding a game touches one file.
    - `plutainer_hook` / `plutainer_hook_exists` / `plutainer_require_hooks`: the shared hook mechanism, above.
    - `resolve_active_port`: the port the server will actually use, resolved once so the entry script, health check and rcon-cli cannot disagree.
    - `launch_game` / `launch_game_graceful`: see Restart behaviour at the bottom.
@@ -218,7 +223,7 @@ Both families have the same shape: one entry script, one game table, and hooks r
    - `apply_rcon_password`: writes `PLUTAINER_RCON_PASSWORD` into `CONFIG_SOT_DIR/CONFIG_FILE`. **Opt-in and never destructive** — unset or empty is a no-op, so it can't null out a password the user set by hand. Rewrites the value on an existing `rcon_password` line (keeping its trailing `//` comment) or appends one. Uses python3, not sed: the value is arbitrary user input that would otherwise need escaping against sed's replacement metacharacters. There is deliberately **no default value** — a shipped placeholder would be a known credential on a port anyone can find by scanning for `getstatus` responders. Called by all three entrypoints after `ensure_config_present`.
    - `extract_rcon_password`: parses `rcon_password` from `CONFIG_PATH`. Handles double-quoted, single-quoted, and unquoted values. Strips `//` comments. On failure, prints a structured `[WARN]` (don't block startup) telling the user the accepted forms and not to set the password via `PLUTAINER_EXTRA_ARGS`.
 
-5. **`migrate-v1-to-v2.sh`** — One-shot migration tool, run via `docker run --entrypoint`. Moves `app/gamefiles` → `app/runtime/gamefiles`, `app/plutonium` → `app/runtime/plutonium`, lifts top-level cfg files from known engine config dirs into `app/configs/` and replaces them with relative symlinks, clears stale `app/logs/` entries, writes `.plutainer-version=2`. Supports `--dry-run`.
+6. **`migrate-v1-to-v2.sh`** — One-shot migration tool, run via `docker run --entrypoint`. Moves `app/gamefiles` → `app/runtime/gamefiles`, `app/plutonium` → `app/runtime/plutonium`, lifts top-level cfg files from known engine config dirs into `app/configs/` and replaces them with relative symlinks, clears stale `app/logs/` entries, writes `.plutainer-version=2`. Supports `--dry-run`.
 
 6. **`log-watcher.sh`** — Background poller started by each entrypoint before `exec wine`. Discovers every `*.log` under `/home/plutainer/app/` (excluding `app/logs/` itself to avoid cycles) and maintains relative symlinks at `/home/plutainer/app/logs/<basename>` pointing at the active one. Active = newest mtime >= container boot time. Agnostic to log name. Symlinks are relative so they resolve the same on host, in this container, or in a sidecar IW4MAdmin container. Disable with `PLUTAINER_LOG_SYMLINKS=false`; poll interval via `PLUTAINER_LOG_POLL_INTERVAL` (default 2s).
 
@@ -226,7 +231,7 @@ Both families have the same shape: one entry script, one game table, and hooks r
    - `PLUTAINER_LOG_PRUNE_DIRS` (colon separated) keeps the poller out of a directory. A SteamCMD install is tens of thousands of files and would otherwise be walked every 2 seconds.
    - `PLUTAINER_LOG_ROTATE=false` disables rotation. Copy-truncate is only valid against an O_APPEND writer — see the rotation note under `steamentry.sh`.
 
-7. **`healthcheck.sh`** — Sources `lib/core.sh`, resolves the port, then queries the server **unauthenticated** and requires a non-empty map name in the reply. Two protocols, dispatched on family: Quake3 `getstatus`/`getinfo` for the CoD engines, Valve `A2S_INFO` for the SteamCMD family. Both report a map, so "healthy" means the same thing everywhere rather than degrading to a TCP accept for the new family. Tries loopback then the container's own address (see the Source note under `steamentry.sh`). Enabled by default; disable with `PLUTAINER_HEALTHCHECK=false`. HEALTHCHECK directive uses `--start-period=5m` to accommodate first-run downloads.
+7. **`healthcheck.sh`** — Sources `lib/core.sh` and resolves the port. CoD uses Quake3 `getstatus`/`getinfo`; SteamCMD games use Valve `A2S_INFO`; both require a non-empty map. Nebula has no public unauthenticated status query that reports the loaded save without joining, so its table deliberately selects the weaker TCP-connect check. Tries loopback then the container's own address. Enabled by default; disable with `PLUTAINER_HEALTHCHECK=false`. HEALTHCHECK uses `--start-period=5m`.
 
    **Why not RCON `status`, which it used before:** both queries are handled by the same connectionless-packet path in the same server frame loop, and both read the map from the same `mapname`/`sv_mapname` cvar, so their failure detection is identical — a stalled loop replies to neither, and a server that has lost its map reports no map to either. RCON only added a dependency on `rcon_password`, which every bundled seed ships empty, so a perfectly healthy first-run server could never report healthy. Match the map key case-insensitively: iw4x/t4/t5/t6 answer `mapname`, t7x answers `MapName`.
 

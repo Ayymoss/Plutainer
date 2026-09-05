@@ -3,12 +3,14 @@
 # Shared core library: volume paths, family detection, process lifecycle.
 # Sourced by entrypoint scripts, healthcheck, and rcon-cli.
 #
-# There are exactly two families, and they are *platforms* rather than engines:
+# There are three families, and they are *platforms* rather than engines:
 #
 #   cod     Quake-derived servers Plutainer installs and runs itself
 #           (Plutonium, IW4x, Alterware, CoD4x). You supply the game files.
 #   steam   Servers SteamCMD installs (7DTD, CS2, L4D2, HL2:DM). You supply
 #           nothing.
+#   nebula  Dyson Sphere Program under Wine with the Nebula multiplayer mod.
+#           You supply the owned game files; Plutainer installs the mod stack.
 #
 # Engine variation lives *below* the family, as a field in that family's game
 # table, because it does not change how Plutainer treats the server: a
@@ -16,9 +18,10 @@
 # does from a SteamCMD install.
 #
 # Each family owns one file, one entry script, and one game table:
-#   lib/fs.sh     symlink/mirroring helpers, used by both
+#   lib/fs.sh     symlink/mirroring helpers, shared by all families
 #   lib/cod.sh    the cod family
 #   lib/steam.sh  the steam family
+#   lib/nebula.sh the nebula family
 #
 # Volume layout (v2):
 #   /home/plutainer/app/
@@ -33,6 +36,7 @@
 #       steam/<game>/                  # SteamCMD-managed install.   [Steam family]
 #       gamedata/<game>/               # Worlds, saves, mods — never
 #                                      # touched by SteamCMD.        [Steam family]
+#       nebula/<game>/                 # Writable DSP + BepInEx overlay.
 #     .plutainer-version               # Layout marker (contains "2").
 #
 
@@ -49,6 +53,7 @@ PLUTAINER_SOURCE_DIR="/home/plutainer/gamefiles"
 # of it on an update, so nothing the user cares about is allowed to live there.
 PLUTAINER_STEAM_DIR="$PLUTAINER_RUNTIME_DIR/steam"
 PLUTAINER_GAMEDATA_DIR="$PLUTAINER_RUNTIME_DIR/gamedata"
+PLUTAINER_NEBULA_DIR="$PLUTAINER_RUNTIME_DIR/nebula"
 
 # Halt without exiting. Container stays in the "running" state, docker
 # restart policies won't fire a loop, healthchecks will eventually mark it
@@ -104,11 +109,22 @@ launch_game() {
 #
 # Args: command + its arguments.
 launch_game_graceful() {
+  launch_game_graceful_signal TERM "$@"
+}
+
+# Graceful wrapper with an explicit signal for the child. Most native servers
+# want SIGTERM; Wine-hosted Nebula documents Ctrl+C/SIGINT as its save-and-exit
+# path, while the container still receives the compose service's SIGTERM.
+# Args: <child-signal> <command> [arguments...]
+launch_game_graceful_signal() {
+  local child_signal="$1"
+  shift
   set +e
   "$@" &
   local game_pid=$!
   local rc=0
   local stopping=false
+  local stop_guard_pid=""
 
   # `wait` is interrupted by a trapped signal even while the child lives, so the
   # loop below re-enters it until the child has actually gone.
@@ -116,8 +132,15 @@ launch_game_graceful() {
   _forward_stop() {
     stopping=true
     trap - TERM INT
-    echo "[INFO] Stop requested — forwarding SIGTERM to ${GAME_NAME} (pid ${game_pid})."
-    kill -TERM "$game_pid" 2>/dev/null || true
+    if declare -F plutainer_graceful_stop_prepare >/dev/null 2>&1; then
+      plutainer_graceful_stop_prepare
+    fi
+    echo "[INFO] Stop requested — forwarding SIG${child_signal} to ${GAME_NAME} (pid ${game_pid})."
+    kill "-${child_signal}" "$game_pid" 2>/dev/null || true
+    if declare -F plutainer_graceful_stop_finish >/dev/null 2>&1; then
+      plutainer_graceful_stop_finish "$game_pid" &
+      stop_guard_pid=$!
+    fi
   }
   trap _forward_stop TERM INT
 
@@ -128,6 +151,10 @@ launch_game_graceful() {
   done
 
   trap - TERM INT
+  if [[ -n "$stop_guard_pid" ]]; then
+    kill "$stop_guard_pid" 2>/dev/null || true
+    wait "$stop_guard_pid" 2>/dev/null || true
+  fi
   set -e
 
   if [[ "$stopping" == "true" ]]; then
@@ -148,12 +175,13 @@ launch_game_graceful() {
 derive_family() {
   cod_is_known_game   "$1" && { echo "cod";   return 0; }
   steam_is_known_game "$1" && { echo "steam"; return 0; }
+  nebula_is_known_game "$1" && { echo "nebula"; return 0; }
   return 1
 }
 
 # --- Hooks ------------------------------------------------------------------
 #
-# Both families run one entry script driven by a game table, and express
+# Each family runs one entry script driven by a game table, and expresses
 # per-game behaviour as functions named <family>_<hook>_<suffix>. Suffixes are
 # tried most-specific first, so a game inherits its engine's behaviour and
 # overrides only what genuinely differs:
@@ -238,12 +266,14 @@ detect_game_type() {
   BASE_GAME=""
   COD_ENGINE=""
   STEAM_ENGINE=""
+  NEBULA_ENGINE=""
   ENGINE_CONFIG_DIR=""
   MOD_CONFIG_DIR=""
 
   case "$GAME_TYPE" in
     cod)   cod_resolve_game   || return 1 ;;
     steam) steam_resolve_game || return 1 ;;
+    nebula) nebula_resolve_game || return 1 ;;
   esac
 
   CONFIG_FILE="${PLUTAINER_CONFIG_FILE:-}"
@@ -253,12 +283,13 @@ detect_game_type() {
 
 # Set DEFAULT_PORT based on BASE_GAME (or the arg). SteamCMD games carry their
 # port in the family table rather than here.
-# Both families keep their default port in their game table, so this is a lookup
+# Every family keeps its default port in its own table, so this is a lookup
 # through whichever table is active rather than a second copy of the data.
 resolve_default_port() {
   case "${GAME_TYPE}" in
     cod)   DEFAULT_PORT="$COD_DEFAULT_PORT" ;;
     steam) DEFAULT_PORT="$STEAM_DEFAULT_PORT" ;;
+    nebula) DEFAULT_PORT="$NEBULA_DEFAULT_PORT" ;;
     *)
       echo "[ERROR] Could not determine default port for '${GAME_NAME}'." >&2
       return 1
@@ -288,6 +319,7 @@ resolve_config_path() {
   case "${GAME_TYPE}" in
     cod)   cod_resolve_config_path ;;
     steam) steam_resolve_config_path ;;
+    nebula) nebula_resolve_config_path ;;
   esac
 }
 
@@ -330,6 +362,7 @@ resolve_admin_endpoint() {
   case "${GAME_TYPE}" in
     cod)   cod_resolve_admin_endpoint ;;
     steam) steam_resolve_admin_endpoint ;;
+    nebula) nebula_resolve_admin_endpoint ;;
   esac
 }
 # Scan environment for v1-era legacy env var names. Populates
@@ -479,8 +512,8 @@ PATHS
 
 # --- Family libraries -------------------------------------------------------
 #
-# Sourced last so they can rely on everything above. Both are always loaded:
-# healthcheck.sh and rcon-cli dispatch on GAME_TYPE at runtime and need either
+# Sourced last so they can rely on everything above. All are always loaded:
+# healthcheck.sh and rcon-cli dispatch on GAME_TYPE at runtime and need each
 # set available. Keeping them in separate files is about where code is allowed
 # to live, not about loading less of it — a CoD change should never require
 # reading the Steam helpers, and vice versa.
@@ -488,7 +521,8 @@ PLUTAINER_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$PLUTAINER_LIB_DIR/fs.sh"
 source "$PLUTAINER_LIB_DIR/cod.sh"
 source "$PLUTAINER_LIB_DIR/steam.sh"
+source "$PLUTAINER_LIB_DIR/nebula.sh"
 
 # Every game tag this image accepts, for error messages. Assembled after the
 # family libraries load so neither list has to be restated here.
-PLUTAINER_KNOWN_GAMES="$(printf '%s, ' "${COD_GAMES[@]}" "${STEAM_GAMES[@]}" | sed 's/, $//')"
+PLUTAINER_KNOWN_GAMES="$(printf '%s, ' "${COD_GAMES[@]}" "${STEAM_GAMES[@]}" "${NEBULA_GAMES[@]}" | sed 's/, $//')"

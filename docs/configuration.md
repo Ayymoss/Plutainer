@@ -6,8 +6,8 @@ Every setting is an environment variable. Only two are required.
 
 | Variable | Description |
 | --- | --- |
-| `PLUTAINER_GAME` | Which game — `t4mp`, `t4sp`, `t5mp`, `t5sp`, `t6mp`, `t6zm`, `iw5mp`, `iw4x`, `t7x`, `cod4x`, `7dtd`, `cs2`, `l4d2`, `hl2dm` |
-| `PLUTAINER_CONFIG_FILE` | Which config to run, e.g. `dedicated_zm.cfg`. Must exist in `app/configs/` — Plutainer seeds one on first start ([names per game](games.md)). Optional for the SteamCMD games, which default to their own config name |
+| `PLUTAINER_GAME` | Which game — `t4mp`, `t4sp`, `t5mp`, `t5sp`, `t6mp`, `t6zm`, `iw5mp`, `iw4x`, `t7x`, `cod4x`, `7dtd`, `cs2`, `l4d2`, `hl2dm`, `nebula` |
+| `PLUTAINER_CONFIG_FILE` | Which config to run, e.g. `dedicated_zm.cfg`. Must exist in `app/configs/` — Plutainer seeds one on first start ([names per game](games.md)). Optional for SteamCMD games and Nebula, which default to their own config name |
 
 Plutonium games (`t4*`, `t5*`, `t6*`, `iw5mp`) also require `PLUTO_SERVER_KEY`.
 
@@ -57,6 +57,14 @@ These only apply to one engine family.
 | `PLUTAINER_CS2_GSLT` | Game Server Login Token, from <https://steamcommunity.com/dev/managegameservers>. Without it the server runs but never appears in the browser | CS2 |
 | `PLUTAINER_CS2_GAME_ALIAS` | Game mode alias, e.g. `competitive`, `casual`, `deathmatch` (default `competitive`) | CS2 |
 | `PLUTAINER_CS2_LAN` | `1` restricts the server to LAN (default `0`) | CS2 |
+| `PLUTAINER_NEBULA_VERSION` | Nebula release: `latest` checks for the current stable release at every start; use an exact version such as `0.9.22` to pin it | Nebula (default `latest`) |
+| `PLUTAINER_NEBULA_MODS` | Declarative comma-separated Thunderstore packages as `Owner-Package[:version]` (or unambiguous `Owner/Package[:version]`); omitted versions and `:latest` update at every start, while an exact version pins that mod | Nebula |
+| `PLUTAINER_NEBULA_SAVE` | Save name to load (without `.dsv`). Unset loads the newest save, or creates one on a fresh volume | Nebula |
+| `PLUTAINER_NEBULA_NEW_GAME` | `true` starts a new game from `nebulaGameDescSettings.cfg` even when saves exist | Nebula |
+| `PLUTAINER_NEBULA_UPS` | Fixed simulation UPS; Nebula accepts 5–240 | Nebula |
+| `PLUTAINER_NEBULA_SERVER_PASSWORD` | Password players must provide to join | Nebula |
+| `PLUTAINER_NEBULA_REMOTE_PASSWORD` | Enables Nebula's authenticated `/server` chat commands and sets their password | Nebula |
+| `PLUTAINER_NEBULA_AUTO_PAUSE` | `true` pauses when no players are connected; `false` keeps simulating | Nebula |
 
 ## Ports
 
@@ -70,8 +78,9 @@ These only apply to one engine family.
 | cs2 | 27015 |
 | l4d2 | 27015 |
 | hl2dm | 27015 |
+| nebula | 8469/TCP |
 
-Publish as **UDP**. IW4x additionally wants TCP published if you host mods, for modlist metadata:
+CoD games use **UDP**. IW4x additionally wants TCP published if you host mods, for modlist metadata:
 
 ```yaml
 ports:
@@ -85,6 +94,13 @@ ports:
 ports:
   - "26900:26900/tcp"
   - "26900-26903:26900-26903/udp"
+```
+
+Nebula uses one TCP port:
+
+```yaml
+ports:
+  - "8469:8469/tcp"
 ```
 
 ## Legacy variables

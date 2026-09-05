@@ -17,6 +17,7 @@ What each game needs from you, and what Plutainer supplies. Find your game, chec
 | Counter-Strike 2 | `cs2` | token, to be listed | 27015 | `server.cfg` |
 | Left 4 Dead 2 | `l4d2` | no | 27015 | `server.cfg` |
 | Half-Life 2: Deathmatch | `hl2dm` | no | 27015 | `server.cfg` |
+| Dyson Sphere Program (Nebula) | `nebula` | no | 8469/TCP | `nebula.cfg`, `nebulaGameDescSettings.cfg` |
 
 `PLUTAINER_CONFIG_FILE` must name one of the seeded files, or a config you place in `app/configs/` yourself. Get it wrong and the container refuses to start with a hint listing what it found — including case-only mismatches like `Server.cfg` vs `server.cfg`.
 
@@ -26,7 +27,9 @@ The `sp` tags are how Plutonium runs zombies/co-op: **T4 zombies is `t4sp`** wit
 
 Mounted read-only at `/home/plutainer/gamefiles`. One copy can be shared by any number of servers.
 
-**The SteamCMD games are the exception:** do not mount game files for `7dtd` or `hl2dm`. Plutainer installs those servers anonymously through SteamCMD into `app/runtime/steam/<game>/`, and keeps everything you care about — worlds, saves, logs — in `app/runtime/gamedata/<game>/`, where a Steam update cannot reach it.
+**The SteamCMD games are the exception:** do not mount game files for `7dtd`, `cs2`, `l4d2` or `hl2dm`. Plutainer installs those servers anonymously through SteamCMD into `app/runtime/steam/<game>/`, and keeps everything you care about — worlds, saves, logs — in `app/runtime/gamedata/<game>/`, where a Steam update cannot reach it.
+
+**Nebula does use the mount.** Point it at the root of a legally owned Dyson Sphere Program installation, with `DSPGAME.exe` at the top. Plutainer mirrors those files read-only into a writable runtime tree, then installs BepInEx, Nebula and Nebula's exact dependency versions from Thunderstore. A host-side `BepInEx/` is deliberately ignored so the two mod installations cannot collide. No Steam credentials or extra compatibility files are required.
 
 ### Plutonium (T4, T5, T6, IW5)
 
@@ -53,6 +56,22 @@ BO3 server files: `BlackOps3_UnrankedDedicatedServer.exe`, `zone/`, `machinecfg`
 Plutainer ships the server binary and the two assets a stock install lacks — `cod4x_patchv2.ff` and `jcod4x_00.iwd` — so nothing is downloaded at runtime.
 
 ## Per-game notes
+
+### Dyson Sphere Program with Nebula (`nebula`)
+
+Nebula turns the Windows DSP client into a headless multiplayer server; there is no separate anonymous dedicated-server depot. Mount the root of your owned installation at `/home/plutainer/gamefiles:ro`. Plutainer creates `steam_appid.txt` as described by [Nebula's official headless guide](https://github.com/NebulaModTeam/nebula/wiki/Setup-Headless-Server), overlays the stable Thunderstore release and all declared dependencies, then starts `DSPGAME.exe` through Wine with `-batchmode -nographics -nebula-server`.
+
+The desktop game calls `SteamAPI_Init` even in headless mode. Keeping a logged-in Steam client and Steam Guard credentials inside a server container would be fragile and unsafe, so Plutainer overlays a pinned, checksum-verified build of [Goldberg Steam Emulator](https://gitlab.com/Mr_Goldberg/goldberg_emulator) into the writable runtime copy. The original `steam_api64.dll` in your read-only gamefiles mount is never changed. Plutainer still provides no game content: a complete, legally owned DSP installation remains mandatory.
+
+The default TCP port is `8469`. Publish TCP only. Nebula has no unauthenticated status protocol, so its healthcheck verifies that the listener accepts a connection; unlike the CoD and SteamCMD checks, it cannot prove a map/save is loaded.
+
+On a fresh volume, Plutainer creates a new game from `app/configs/nebulaGameDescSettings.cfg`. Later starts load the newest save automatically. Set `PLUTAINER_NEBULA_SAVE` to load a named save, or `PLUTAINER_NEBULA_NEW_GAME=true` to deliberately create another from the settings file. Saves and the matching `.server` player-data files persist under `app/runtime/gamedata/nebula/Dyson Sphere Program/Save/`; keep both when transferring a world.
+
+`app/configs/` is the complete BepInEx config directory, so configs created by additional mods persist there too. `PLUTAINER_PORT`, `PLUTAINER_NEBULA_SERVER_PASSWORD`, `PLUTAINER_NEBULA_REMOTE_PASSWORD` and `PLUTAINER_NEBULA_AUTO_PAUSE` update Nebula's config without replacing unrelated settings.
+
+Nebula follows the current stable Thunderstore release by default. Set `PLUTAINER_NEBULA_VERSION=latest` explicitly for clarity, or pin an exact release such as `0.9.22`. Extra packages go in `PLUTAINER_NEBULA_MODS`, comma separated, using `Owner-Package`, `Owner-Package:latest`, or `Owner-Package:1.2.3`. `Owner/Package` is also accepted and is clearest when an owner name contains a hyphen. At each start, every `latest` package and its dependency graph is checked independently, so dependency-only updates are not missed. Exact top-level versions remain pinned. Removing a package from the list removes its Plutainer-managed plugin files and dependencies that nothing else needs; generated configs and manually installed, untracked plugins are left alone. `PLUTAINER_AUTO_UPDATE=false` skips all Thunderstore checks and requires an existing installation. Clients need the same multiplayer-relevant mods and versions.
+
+Nebula documents Ctrl+C as its save-and-exit path. Add `stop_signal: SIGTERM` and `stop_grace_period: 90s`; Plutainer catches the container signal, sends SIGINT to Wine, and waits for both `_lastexit_` files to settle. If Wine remains stuck after the durable save, Plutainer terminates that wrapper and exits the service cleanly. Without those compose settings Docker uses the image's default SIGKILL and the last autosave is the recovery point.
 
 ### The SteamCMD games (7DTD, CS2, L4D2, HL2:DM)
 
@@ -150,11 +169,12 @@ Upstream ships `sv_maprotation` commented out, which would leave `+map_rotate` w
 
 ## Architecture support
 
-`linux/amd64` and `linux/arm64` are both published, with two exceptions:
+`linux/amd64` and `linux/arm64` are both published, with these qualifications:
 
 - **IW4x does not work on arm64.** Upstream publishes `x86_64` binaries only, so the arm64 image builds the launcher from source, and that build is currently broken ([iw4x/launcher#76](https://github.com/iw4x/launcher/issues/76)). It refuses to start and says why. It will work again automatically once upstream builds.
 - **CoD4x is amd64-only, permanently.** Its server is a 32-bit x86 Linux binary, which cannot execute on arm64 at all.
 - **The SteamCMD games are amd64-only.** SteamCMD ships x86_64 binaries only, so the arm64 image carries no copy of it and refuses with an explanation. It is a capability check, not an architecture check: the day an arm64 SteamCMD exists, this starts working with no code change.
+- **Nebula is tested on amd64.** The arm64 image can translate x86_64 Windows programs through Hangover, but the DSP/BepInEx combination remains best-effort until it has equivalent live coverage.
 
 Plutonium and T7x work on both. If an arm64 build fails outright, `:latest` publishes amd64-only rather than being held back — check with `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` before upgrading an arm64 host.
 
@@ -171,6 +191,7 @@ On first start Plutainer copies a working config into `app/configs/`. Existing f
 | T7x | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) — includes the lobby scripts `sv_lobby_mode` needs |
 | IW4x | [iw4x/iw4-server-configs](https://github.com/iw4x/iw4-server-configs) |
 | CoD4x | Maintained in this repo, adapted from [matracey/docker-cod4](https://github.com/matracey/docker-cod4) |
+| Nebula | Maintained in this repo from the defaults in Nebula's [headless-server guide](https://github.com/NebulaModTeam/nebula/wiki/Setup-Headless-Server) |
 
 These are vendored into the repository under `seed-configs/`, not downloaded at build time, so a build can't break because someone renamed a repo — which happens. Each game's `seed-configs/<game>/SOURCE` records the exact upstream commit.
 

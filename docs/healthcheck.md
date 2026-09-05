@@ -2,17 +2,18 @@
 
 ## What "healthy" means
 
-Plutainer asks the server for its status and requires it to **name a loaded map**. A container is healthy only when the game is genuinely serving — not merely when the process is alive or a socket accepted a connection.
+For Call of Duty and SteamCMD games, Plutainer asks the server for its status and requires it to **name a loaded map**. A container is healthy only when the game is genuinely serving — not merely when the process is alive.
 
-That bar is the same for every game; only the query differs.
+Nebula exposes no unauthenticated status request that names the loaded save, so its strongest non-invasive check is the presence of the game-owned TCP listener.
 
 1. Work out the game and port.
 2. Query it, unauthenticated:
    - **Call of Duty engines** — Quake3 `getstatus`, falling back to `getinfo`.
    - **SteamCMD games** — Valve's `A2S_INFO`, the query behind the Steam server browser.
-3. Require a map name in the reply.
+   - **Nebula** — inspect Linux's TCP listener table for the configured port. This does not connect, produce WebSocket errors, or create a ghost player.
+3. Require a map name where the protocol supplies one; for Nebula, require the listener.
 
-Both queries are unauthenticated on purpose. RCON would work too, but it depends on `rcon_password`, and every seeded config ships that empty — so a perfectly healthy first-run server could never report healthy.
+All checks are unauthenticated on purpose. RCON would work for the other families, but it depends on a password, and every seeded config ships that empty — so a perfectly healthy first-run server could never report healthy.
 
 The address is tried as `127.0.0.1` first, then the container's own IP. Source dedicated servers answer only on the latter: an identical A2S query times out on loopback and replies immediately on the container address, with the server healthy throughout.
 
@@ -49,7 +50,7 @@ A game that *does* — a world to save — opts in per service, because `SIGKILL
     stop_grace_period: 90s
 ```
 
-Plutainer then forwards the signal and waits. Docker sends `SIGKILL` itself when the grace period expires, so a server that ignores `SIGTERM` still cannot wedge a stop.
+Plutainer then forwards the signal and waits. Nebula waits for its paired `_lastexit_.dsv` and `_lastexit_.server` files to settle before ending a Wine wrapper that remains stuck after saving. Docker sends `SIGKILL` itself when the grace period expires, so a server that ignores `SIGTERM` still cannot wedge a stop.
 
 ## Auto-restarting unhealthy servers
 

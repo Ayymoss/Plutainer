@@ -6,13 +6,14 @@ Copy the one that matches what you're doing, adjust the paths, `docker compose u
 | --- | --- |
 | [`single-server.yml`](single-server.yml) | One server. Start here |
 | [`per-game.yml`](per-game.yml) | One ready-made service block for **every** supported game — copy the ones you want |
+| [`nebula.yml`](nebula.yml) | Dyson Sphere Program with the Nebula multiplayer mod |
 | [`multi-server.yml`](multi-server.yml) | Several servers sharing one set of game files |
 | [`with-iw4madmin.yml`](with-iw4madmin.yml) | Servers plus an IW4MAdmin sidecar |
 | [`env.example`](env.example) | Keys and passwords, kept out of the compose file |
 
 ## The three things you must change
 
-1. **The gamefiles path** — `/opt/game-files/…` in most examples. Point it at your own copy. The SteamCMD games need no gamefiles mount.
+1. **The gamefiles path** — `/opt/game-files/…` in most examples. Point it at your own copy. Nebula needs the DSP root but no Steam login; the SteamCMD games need no gamefiles mount.
 2. **`PLUTAINER_CONFIG_FILE`** — must name a config Plutainer seeds for that game ([list](../docs/games.md#at-a-glance)); the SteamCMD games default to their own config name.
 3. **Ports** — one server per port. Most games publish UDP; follow each example's port block.
 

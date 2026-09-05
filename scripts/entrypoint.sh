@@ -57,7 +57,7 @@ fi
 
 # --- Dispatch to the family entry script ---
 #
-# Two families, two entry scripts. Each is table-driven over its own game list,
+# Three families, three entry scripts. Each is table-driven over its own game list,
 # so adding a game never adds a branch here.
 case "$GAME_TYPE" in
   cod)
@@ -67,6 +67,10 @@ case "$GAME_TYPE" in
   steam)
     echo "SteamCMD game detected (${GAME_NAME}). Handing off to the SteamCMD entrypoint..."
     exec "$SCRIPT_DIR/games/steamentry.sh"
+    ;;
+  nebula)
+    echo "Nebula game detected (${GAME_NAME}). Handing off to the Nebula entrypoint..."
+    exec "$SCRIPT_DIR/games/nebulaentry.sh"
     ;;
 esac
 

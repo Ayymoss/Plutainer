@@ -2,15 +2,18 @@
 
 Sending commands to a running server.
 
-`rcon-cli` works on every game, but the protocol underneath differs — it picks the right one for you:
+`rcon-cli` works on every game with a network administration protocol, and picks the right one for you. Nebula is the exception: it exposes authenticated `/server` commands through the in-game chat rather than a standalone RCON socket.
 
 | Game | Protocol | Port | Password comes from |
 | --- | --- | --- | --- |
 | Plutonium, IW4x, T7x, CoD4x | Quake3 RCON (UDP) | game port | `rcon_password` in your cfg |
 | Half-Life 2: Deathmatch | Source RCON (TCP) | game port | `rcon_password` in your cfg |
 | 7 Days to Die | Telnet console (TCP) | `TelnetPort`, default 8081 | `TelnetPassword` in `serverconfig.xml` |
+| Nebula | In-game `/server` chat commands | game port | `RemoteAccessPassword` in `nebula.cfg` |
 
 Setting `PLUTAINER_RCON_PASSWORD` fills in the right field for the game, whichever it is. On 7DTD it also switches `TelnetEnabled` on, since the console is off by default.
+
+For Nebula, set `PLUTAINER_NEBULA_REMOTE_PASSWORD` instead. A connected client can then run `/server login <password>` followed by `/server save`, `/server load`, `/server list` or `/server info`. `rcon-cli` reports that Nebula has no protocol it can speak; it does not pretend chat commands are RCON.
 
 ## Set a password first
 
