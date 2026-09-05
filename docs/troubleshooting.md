@@ -40,6 +40,22 @@ Your volume or your variables are from the old image. See [MIGRATION.md](../MIGR
 
 Expected. IW4x downloads 1–2 GB, Plutonium ~500 MB, T7x a few MB, CoD4x nothing. `docker logs -f` shows progress. The healthcheck won't judge for five minutes.
 
+### Nebula says `No DSPGAME.exe was found`
+
+Mount the root of your Dyson Sphere Program installation, not its parent directory. `/home/plutainer/gamefiles/DSPGAME.exe` must exist inside the container. The mount may and should be read-only.
+
+### Nebula logs `SteamAPI_Init() failed`
+
+Use a current Plutainer image. Nebula support includes a pinned headless Steam API compatibility layer and applies it only to the writable runtime tree. If the message persists after updating the image, remove `app/runtime/nebula/` and restart; saves live separately under `app/runtime/gamedata/nebula/` and are unaffected.
+
+### Nebula or BepInEx stopped working after DSP updated
+
+Nebula warns that game updates can temporarily make the mod incompatible. Plutainer follows the current stable Thunderstore release by default (`PLUTAINER_NEBULA_VERSION=latest`); if the compatible release is older, set the variable to an exact version and restart. Extra packages in `PLUTAINER_NEBULA_MODS` use `Owner-Package[:version]` or `Owner/Package[:version]`, where an omitted version or `:latest` follows current stable. The client and server must run compatible Nebula/mod versions.
+
+### Nebula exits because it cannot find a save
+
+Leave `PLUTAINER_NEBULA_SAVE` unset to load the newest save automatically. Named values omit `.dsv` and must exist under `app/runtime/gamedata/nebula/Dyson Sphere Program/Save/`. On an empty save directory Plutainer uses `-newgame-cfg` and creates a world from `app/configs/nebulaGameDescSettings.cfg`.
+
 ---
 
 ## Server runs but nobody can play
@@ -201,6 +217,8 @@ That app has no Linux depot available to anonymous SteamCMD. Nothing Plutainer c
 ### My world wasn't saved when I stopped the container
 
 Add `stop_signal: SIGTERM` and `stop_grace_period: 90s` to that service. The image's default is `SIGKILL`, which is instant and right for the Call of Duty engines but gives a world-based game no chance to save. See [Healthcheck](healthcheck.md#restart-behaviour).
+
+For Nebula, the wrapper converts that stop request to SIGINT because Nebula documents Ctrl+C as its save-and-exit path. Its emergency fallback is the last autosave.
 
 ### The disk filled up
 

@@ -1,3 +1,19 @@
+# DSP's client-side Steam API refuses to start without a desktop Steam client.
+# Ship the same pinned x64 API-compatible replacement as the amd64 image; Wine
+# executes it through Hangover while the owned game mount remains read-only.
+# This stage only downloads architecture-neutral artifacts, so run it on the
+# builder's native architecture during cross-builds.
+FROM --platform=$BUILDPLATFORM alpine:3.22 AS nebula-steam-api
+ARG GBE_JOB=4247811307
+ARG GBE_SHA256=0cfe547ea82071953cf99daffa3bd11bb468eec0e400961e7e33e4dc36674ea8
+RUN apk add --no-cache wget \
+    && mkdir -p /out \
+    && wget -q -O /out/steam_api64.dll "https://gitlab.com/Mr_Goldberg/goldberg_emulator/-/jobs/${GBE_JOB}/artifacts/raw/release/steam_api64.dll" \
+    && echo "${GBE_SHA256}  /out/steam_api64.dll" | sha256sum -c - \
+    && wget -q -O /out/LICENSE "https://gitlab.com/Mr_Goldberg/goldberg_emulator/-/raw/master/LICENSE" \
+    && test -s /out/steam_api64.dll \
+    && test -s /out/LICENSE
+
 # ARM64 variant (Raspberry Pi 5, Ampere, Apple silicon under Linux).
 #
 # Architecture translation strategy:
@@ -105,6 +121,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         procps \
         findutils \
+        xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Hangover 11.9 = Wine 11 + FEX + box64 as Wine CPU plug-ins (the in-Wine
@@ -126,9 +143,9 @@ ENV WINEDLLOVERRIDES="mscoree,mshtml="
 USER plutainer
 WORKDIR /home/plutainer/.plutainer
 
-# No X server anywhere in the image: every server we run is headless. t7x needs
-# `-headless` for that (see alterentry.sh); wineboot only warns about the
-# missing display driver and still initialises the prefix.
+# Nebula uses Xvfb only as Wine's minimal display driver; Unity itself still
+# runs with `-batchmode -nographics`. Other games launch exactly as before.
+# wineboot does not need the display and merely warns while initialising.
 RUN wineboot -u && wineserver -w
 
 COPY --from=rust-builder --chown=plutainer:plutainer \
@@ -153,6 +170,9 @@ COPY --from=cpp-builder --chown=plutainer:plutainer \
 COPY --chown=plutainer:plutainer seed-configs/ seed-configs/
 
 COPY --chown=plutainer:plutainer scripts/ .
+COPY --from=nebula-steam-api --chown=plutainer:plutainer \
+     /out/ \
+     /home/plutainer/.plutainer/nebula/steam-api/
 # Everything executable, rather than a list that silently rots as scripts move
 # between directories.
 RUN find . -type f -name '*.sh' -exec chmod +x {} + && chmod +x rcon-cli

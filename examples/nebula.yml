@@ -1,0 +1,50 @@
+# Dyson Sphere Program with the Nebula multiplayer mod.
+#
+# Point the gamefiles mount at the root of your legally owned DSP installation.
+# Plutainer installs BepInEx, Nebula, its declared dependencies, and the
+# headless Steam API compatibility layer itself. No Steam login is required.
+
+services:
+  nebula-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: nebula-1
+    restart: unless-stopped
+
+    # Lets Plutainer invoke Nebula's Ctrl+C save-and-exit path. Docker still
+    # force-kills the process when the grace period expires.
+    stop_signal: SIGTERM
+    stop_grace_period: 90s
+
+    ports:
+      - "8469:8469/tcp"
+
+    volumes:
+      - /opt/game-files/DysonSphereProgram:/home/plutainer/gamefiles:ro
+      - ./nebula-1:/home/plutainer/app
+
+    environment:
+      PLUTAINER_GAME: nebula
+      PLUTAINER_PORT: "8469"
+      PLUTAINER_SERVER_NAME: My Nebula Server
+
+      # Optional join password and authenticated in-game /server commands.
+      # PLUTAINER_NEBULA_SERVER_PASSWORD: ${NEBULA_SERVER_PASSWORD}
+      # PLUTAINER_NEBULA_REMOTE_PASSWORD: ${NEBULA_REMOTE_PASSWORD}
+
+      # Fresh volumes create a world from nebulaGameDescSettings.cfg. Later
+      # starts load the newest save. To choose one explicitly (no .dsv):
+      # PLUTAINER_NEBULA_SAVE: MySave
+
+      # Follow current stable Nebula (the default), or set NEBULA_VERSION in
+      # .env to an exact release such as 0.9.22.
+      PLUTAINER_NEBULA_VERSION: ${NEBULA_VERSION:-latest}
+
+      # Extra Thunderstore packages, comma separated. Omitted versions and
+      # :latest update at each start; :1.2.3 pins one. Multiplayer clients need
+      # the same gameplay-affecting mods and versions.
+      PLUTAINER_NEBULA_MODS: ${NEBULA_MODS:-}
+
+# After first start:
+#   configs/nebula.cfg                  network and multiplayer settings
+#   configs/nebulaGameDescSettings.cfg new-world settings
+#   runtime/gamedata/nebula/Dyson Sphere Program/Save/  saves + .server data

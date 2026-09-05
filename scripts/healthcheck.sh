@@ -3,8 +3,8 @@
 # Liveness check. Healthy means the server named a map it is running — not
 # merely that a process exists or that a socket accepted a connection.
 #
-# Two protocols cover every family, chosen so the bar is the same for all of
-# them:
+# Three protocols cover every family. The first two share the strongest bar;
+# the last is the best Nebula exposes without joining the game:
 #
 #   Quake3   Call of Duty engines. Unauthenticated `getstatus`, falling back to
 #            `getinfo`. Preferred over RCON `status` because both are handled by
@@ -19,12 +19,12 @@
 #            "healthy" keeps meaning "actually serving" rather than degrading to
 #            "a TCP connect succeeded".
 #
-#   TCP      Last resort, for a game that speaks neither. It only proves
-#            something is listening, so it is a genuinely weaker check and no
-#            game currently selects it.
+#   Listener Nebula. Its WebSocket handshake is not a public status protocol,
+#            so inspect the kernel's TCP listener table without connecting.
+#            This avoids generating a malformed-handshake exception in the
+#            server log or pretending to join the multiplayer session.
 #
-# Which one a game uses comes from its family table (STEAM_QUERY), not from a
-# branch here.
+# Which one a game uses comes from its family table.
 #
 set -e
 
@@ -55,6 +55,7 @@ echo "[INFO] Querying server at 127.0.0.1:${HEALTHCHECK_PORT}..."
 # table, because those games share no engine.
 HEALTHCHECK_QUERY="quake3"
 [[ "${GAME_TYPE}" == "steam" ]] && HEALTHCHECK_QUERY="${STEAM_QUERY}"
+[[ "${GAME_TYPE}" == "nebula" ]] && HEALTHCHECK_QUERY="${NEBULA_QUERY}"
 
 if [[ "${HEALTHCHECK_QUERY}" == "a2s" ]]; then
   QUERY_HOSTS="$(plutainer_query_hosts)"
@@ -89,27 +90,30 @@ sys.exit(1)
     exit 1
   }
 
-elif [[ "${HEALTHCHECK_QUERY}" == "tcp" ]]; then
-  QUERY_HOSTS="$(plutainer_query_hosts)"
+elif [[ "${HEALTHCHECK_QUERY}" == "listener" ]]; then
   RESPONSE=$(python3 -c "
-import socket
 import sys
 
-for host in '${QUERY_HOSTS}'.split():
+wanted = format(${HEALTHCHECK_PORT}, '04X')
+for table in ('/proc/net/tcp', '/proc/net/tcp6'):
     try:
-        with socket.create_connection((host, ${HEALTHCHECK_PORT}), timeout=3):
-            pass
-    except Exception:
+        rows = open(table, encoding='ascii').read().splitlines()[1:]
+    except OSError:
         continue
-    # Deliberately not called 'map:' — this check cannot know one, and saying so
-    # keeps it honest against the other two.
-    print('accepting connections on %s' % host)
-    sys.exit(0)
+    for row in rows:
+        fields = row.split()
+        local_port = fields[1].rsplit(':', 1)[-1].upper()
+        state = fields[3]
+        if local_port == wanted and state == '0A':
+            # Deliberately not called 'map:' — this check cannot know one, and
+            # saying so keeps it honest against the other two.
+            print('kernel reports a TCP listener')
+            sys.exit(0)
 
-print('nothing accepted a connection', file=sys.stderr)
+print('no TCP listener found', file=sys.stderr)
 sys.exit(1)
 ") || {
-    echo "[ERROR] Nothing is listening on port ${HEALTHCHECK_PORT}." >&2
+    echo "[ERROR] Nothing is listening on TCP port ${HEALTHCHECK_PORT}." >&2
     exit 1
   }
 

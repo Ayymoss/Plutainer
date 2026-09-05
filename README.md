@@ -1,6 +1,6 @@
 # Plutainer
 
-Run a dedicated game server in Docker. One image, eleven games, configured with environment variables.
+Run a dedicated game server in Docker. One image, twelve games, configured with environment variables.
 
 ```yaml
 services:
@@ -36,6 +36,7 @@ services:
 | Counter-Strike 2 | `cs2` | Source 2, amd64 only. Installed by SteamCMD; ~67 GB. Needs a [GSLT](docs/games.md#the-source-games-cs2-l4d2-hl2dm) to be listed |
 | Left 4 Dead 2 | `l4d2` | Source engine, amd64 only. Installed by SteamCMD; no gamefiles mount |
 | Half-Life 2: Deathmatch | `hl2dm` | Source engine, amd64 only. Installed by SteamCMD; no gamefiles mount |
+| Dyson Sphere Program | `nebula` | Nebula multiplayer mod. Supply your owned DSP files; Plutainer supplies the headless runtime; TCP 8469 |
 
 Image: `ghcr.io/ayymoss/plutainer:latest` — multi-arch (amd64 + arm64), with [documented architecture exceptions](docs/games.md#architecture-support).
 
@@ -57,11 +58,11 @@ Image: `ghcr.io/ayymoss/plutainer:latest` — multi-arch (amd64 + arm64), with [
 ## What Plutainer does for you
 
 - **Writes a working config on first start.** Community defaults are seeded into `app/configs/`, and never overwrite files you've edited.
-- **Fetches the server binaries.** Plutonium, IW4x and T7x updaters run at startup; CoD4x ships in the image; the SteamCMD games install themselves. You supply base game files only for the games that need them.
+- **Fetches the server binaries and mods.** Plutonium, IW4x and T7x updaters run at startup; CoD4x ships in the image; the SteamCMD games install themselves; Nebula and its Thunderstore dependencies update together. You supply base game files only for the games that need them.
 - **Puts every config in one folder.** Edit `app/configs/whatever.cfg`; Plutainer symlinks it to wherever the engine expects it.
 - **Keeps logs findable.** `app/logs/` holds stable symlinks to the active log files, wherever the game moved them.
 - **Fails loudly, not endlessly.** A misconfiguration holds the container in `Up` with a readable error instead of a restart loop.
-- **Reports real health.** The healthcheck asks the server for its current map — no RCON password required.
+- **Reports real health.** CoD and SteamCMD healthchecks require a loaded map; Nebula requires its game-owned listener without touching the WebSocket session. No RCON password required.
 
 ## Support
 
@@ -74,3 +75,6 @@ Plutonium-specific game issues are out of scope, and some familiarity with Docke
 - Corey, for a production testing ground @ <https://cukservers.net/>
 - HGM, for the name 'Plutainer' @ <https://hgmserve.rs/>
 - The config authors credited in [Games](docs/games.md#bundled-configs).
+- [Nebula](https://github.com/NebulaModTeam/nebula) for DSP multiplayer, and
+  [Goldberg Steam Emulator](https://gitlab.com/Mr_Goldberg/goldberg_emulator) for the
+  pinned headless Steam API compatibility layer (license included in the image).

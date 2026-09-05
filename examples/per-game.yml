@@ -270,3 +270,28 @@ services:
       PLUTAINER_RCON_PASSWORD: ${HL2DM_RCON}
       # PLUTAINER_MAX_CLIENTS: "16"
       # PLUTAINER_START_MAP: dm_lockdown
+
+  # --------------------------------------------------------------- Nebula
+  # Dyson Sphere Program. Supply the owned Windows game files; Plutainer
+  # installs BepInEx, Nebula, its dependency graph, and the headless Steam API
+  # compatibility layer. No Steam login is required.
+  nebula-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: nebula-1
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 90s
+    ports:
+      - "8469:8469/tcp"
+    volumes:
+      - /opt/game-files/DysonSphereProgram:/home/plutainer/gamefiles:ro
+      - ./nebula-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: nebula
+      PLUTAINER_PORT: "8469"
+      PLUTAINER_SERVER_NAME: My Nebula Server
+      PLUTAINER_NEBULA_VERSION: ${NEBULA_VERSION:-latest}
+      PLUTAINER_NEBULA_MODS: ${NEBULA_MODS:-}
+      # PLUTAINER_NEBULA_SERVER_PASSWORD: ${NEBULA_SERVER_PASSWORD}
+      # PLUTAINER_NEBULA_REMOTE_PASSWORD: ${NEBULA_REMOTE_PASSWORD}
+      # PLUTAINER_NEBULA_SAVE: MySave
