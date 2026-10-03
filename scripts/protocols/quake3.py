@@ -19,6 +19,10 @@ verbatim by rcon-cli anyway.
 import socket
 
 
+class ResponseTimeout(Exception):
+    """No reply arrived in time."""
+
+
 class Quake3Server(object):
     """A single UDP conversation with one game server."""
 
@@ -64,10 +68,20 @@ class Quake3Server(object):
             if data:
                 return self.parse_packet(data)
             retries -= 1
-        raise Exception('Server response timed out')
+        raise ResponseTimeout('Server response timed out')
 
-    def rcon(self, cmd):
-        r_cmd = self.command('rcon "%s" %s' % (self.rcon_password, cmd))
+    def rcon(self, cmd, timeout=10):
+        # Sent once, never retried. Unlike a query, a command is not
+        # idempotent, and a slow reply is not a lost one: `map_rotate` blocks
+        # the server while the next map loads, so the 1s retry loop used for
+        # queries resent it and the rotation skipped maps. Loopback UDP does
+        # not drop packets, so waiting longer costs nothing a retry would buy.
+        try:
+            r_cmd = self.command('rcon "%s" %s' % (self.rcon_password, cmd),
+                                 timeout=timeout, retries=1)
+        except ResponseTimeout:
+            raise ResponseTimeout('No reply within %ds. The command was sent '
+                                  'once and may still have run.' % timeout)
         if r_cmd[1] in ('No rconpassword set on the server.\n', 'Bad rconpassword.\n'):
             raise Exception(r_cmd[1][:-1])
         return r_cmd

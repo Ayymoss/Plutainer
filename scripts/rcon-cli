@@ -189,7 +189,10 @@ def main():
     try:
         # One-shot: everything after the program name is the command.
         if len(sys.argv) > 1:
-            print(client.send(" ".join(sys.argv[1:])))
+            try:
+                print(client.send(" ".join(sys.argv[1:])))
+            except Exception as err:
+                raise SystemExit("Console error: %s" % err)
             return
 
         print(
