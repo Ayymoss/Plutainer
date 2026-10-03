@@ -145,6 +145,16 @@ Plutainer downloads the latest `boiii.exe` from [Ezz-lol/boiii-free releases](ht
 
 Multiplayer and zombies only, so no campaign config is seeded.
 
+**Multiplayer configs must exec the gametype defaults, or every player spawns with fists.** The seeded `server.cfg` does this for you, in the same way the zombies config always has:
+
+```
+exec "gamedata/gamesettings/mp/gamesettings_default.cfg"
+exec "gamedata/configs/common/default_xboxlive.cfg"
+exec "gamedata/gamesettings/mp/gamesettings_tdm.cfg"   // your gametype
+```
+
+If you are coming from T7x, your existing `server.cfg` has only the last line. Under T7x that was enough, because its gametype files came from the seed's `t7x/gamesettings/` folder, which ran the defaults for you. BOIII uses the game's own gametype files, which don't, and a dedicated server ignores BOIII's gamesettings override folders. Plutainer notices a config like that, runs the two lines before it, and says so in the log. Add them to your config to make that message go away. Custom gametype settings still go in `server.cfg` as `gts <setting> <value>` lines, after the gametype exec.
+
 It launches with `-headless`, which is what removes the need for a virtual display — without it the server hangs on window creation and never binds its port. `-dedicated` is passed separately and is also required.
 
 `PLUTAINER_MOD` here is a **Steam Workshop ID**, not a folder name.
