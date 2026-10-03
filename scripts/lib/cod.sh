@@ -661,11 +661,16 @@ cod_launch_iw4x() {
 
 # --- Ezz BOIII (Black Ops III) ----------------------------------------------
 
-BOIII_BINARY_URL="https://r2.ezz.lol/boiii/boiii.exe"
+BOIII_BINARY_URL="https://github.com/Ezz-lol/boiii-free/releases/latest/download/boiii.exe"
+
+# BOIII keeps its data/ set, plugins and minidumps under %LOCALAPPDATA%oiii.
+# The Wine prefix lives in the image layer, so that directory is linked into the
+# volume: anything written there would otherwise vanish on every recreate.
+BOIII_APPDATA_DIR="$PLUTAINER_RUNTIME_DIR/boiii"
+BOIII_WINE_APPDATA="$HOME/.wine/drive_c/users/$(id -un)/AppData/Local/boiii"
 
 cod_stage_boiii() {
-  link_files "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" \
-    codlogo.bmp machinecfg steam_api64.dll steamclient64.dll tier0_s64.dll vstdlib_s64.dll
+  link_files "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR"     codlogo.bmp machinecfg steam_api64.dll steamclient64.dll tier0_s64.dll vstdlib_s64.dll
 
   # BOIII decides it is a dedicated server by checking which executables exist:
   #   is_server = has_flag("dedicated") || (!has_client && has_server)
@@ -688,11 +693,16 @@ cod_stage_boiii() {
   if [[ -d "$PLUTAINER_SOURCE_DIR/usermaps" ]]; then
     link_dir_contents "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" usermaps
   fi
+
+  mkdir -p "$BOIII_APPDATA_DIR" "$(dirname "$BOIII_WINE_APPDATA")"
+  rm -rf "$BOIII_WINE_APPDATA"
+  ln -s "$BOIII_APPDATA_DIR" "$BOIII_WINE_APPDATA"
 }
 
 cod_update_boiii() {
   local exe="$PLUTAINER_GAMEFILES_DIR/boiii.exe"
-  if [[ -f "$exe" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
+  local ui="$BOIII_APPDATA_DIR/data/launcher/main.html"
+  if [[ -f "$exe" && -f "$ui" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
     echo "Skipping BOIII update because PLUTAINER_AUTO_UPDATE is set to 'false'."
     return 0
   fi
@@ -701,62 +711,29 @@ cod_update_boiii() {
   else
     echo "First container run detected. Downloading BOIII... This may take a moment."
   fi
+
   # wget -N is timestamping: it only downloads when upstream is newer. Note that
   # this replaces boiii.exe, so a hand-built binary in the volume needs
   # PLUTAINER_AUTO_UPDATE=false to survive a restart.
-  wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" "$BOIII_BINARY_URL"
+  if [[ ! -f "$exe" || "${PLUTAINER_AUTO_UPDATE:-}" != "false" ]]; then
+    wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" "$BOIII_BINARY_URL"       || echo "[WARN] Could not download boiii.exe from $BOIII_BINARY_URL" >&2
+  fi
+
+  # The data/ set is not optional for a server, see sync-boiii-data.py. Only
+  # the client updater fetches it, and a dedicated server never runs that.
+  python3 "$PLUTAINER_ROOT/sync-boiii-data.py" "$BOIII_APPDATA_DIR"     || echo "[WARN] Could not sync BOIII's data files." >&2
 }
 
-# The build published at BOIII_BINARY_URL cannot run a headless dedicated
-# server. Two independent blockers, both fixed upstream but neither in this
-# artifact, which was measured on a clean volume on 2026-08-20:
-#
-#   * the launcher-UI check runs before the client/server split, so a server
-#     fails a check for a file only a client ever downloads. It exits rc=1
-#     having blamed the network, which is not the cause.
-#   * the headless console calls AllocConsole() at static-init time. Under Wine
-#     with no display that starts conhost.exe and the process blocks on its
-#     pipe forever: one thread, 0% CPU, no UDP socket, nothing in `docker logs`.
-#
-# The second is why this refuses rather than warns. A warning would be followed
-# by a container that sits at "Up" indefinitely, answering nothing and printing
-# nothing, which is the least debuggable failure this image can produce.
-#
-# Pinned by the hash of the *known-bad* artifact rather than of a known-good
-# one, so the day anything else is published the check stops firing on its own
-# and no release of this image is needed to unblock it.
-BOIII_KNOWN_BAD_SHA256="06d897a6945a5fe8e8dd8312dcda34f963cf188dd596bc453855309c11ea97c7"
-
 cod_validate_boiii() {
-  local exe="$PLUTAINER_GAMEFILES_DIR/boiii.exe"
+  [[ -f "$PLUTAINER_GAMEFILES_DIR/boiii.exe" ]]     || hold_indefinitely "boiii.exe is missing from $PLUTAINER_GAMEFILES_DIR and could not be downloaded from $BOIII_BINARY_URL."
 
-  [[ -f "$exe" ]] || hold_indefinitely     "boiii.exe is missing from $PLUTAINER_GAMEFILES_DIR and could not be downloaded from $BOIII_BINARY_URL."
+  # BOIII refuses to start without its launcher page, even as a server, and
+  # blames the network when it does. Without the rest of data/ it would start
+  # and then report every dvar as a hash, so no map would ever be visible.
+  [[ -f "$BOIII_APPDATA_DIR/data/launcher/main.html" ]]     || hold_indefinitely "BOIII's data files are missing from $BOIII_APPDATA_DIR/data and could not be
+downloaded. A dedicated server needs them as much as a client does.
 
-  local sum
-  sum="$(sha256sum "$exe" | cut -d' ' -f1)"
-  [[ "$sum" == "$BOIII_KNOWN_BAD_SHA256" ]] || return 0
-
-  hold_indefinitely "The boiii.exe published at $BOIII_BINARY_URL cannot run a dedicated server in
-a container, so this server has not been started.
-
-It has two faults, both fixed in the client's source but neither in the build
-being served:
-
-  * it checks for a launcher file that only a game client ever downloads, then
-    exits reporting that it needs an internet connection. The connection is
-    not the problem.
-  * in headless mode it tries to open a Windows console. There is no display
-    here, so it waits on that console forever - no map, no open port, and no
-    output at all.
-
-Until a newer build is published, supply your own boiii.exe:
-
-  1. Build it, or obtain a build that carries both fixes.
-  2. Put it at <your app volume>/runtime/gamefiles/boiii.exe
-  3. Set PLUTAINER_AUTO_UPDATE=false, or this image will download over it
-     again on the next start.
-
-Set PLUTAINER_AUTO_UPDATE=false and restart once that binary is in place."
+Check that this container can reach r2.ezz.lol, then restart it."
 }
 
 cod_launch_boiii() {
@@ -766,21 +743,25 @@ cod_launch_boiii() {
   # builds a real Win32 console *window* unless it is headless, and under Wine
   # with no display the process hangs on window creation
   # ("nodrv_CreateWindow") and never binds its port. `-quiet-crash` suppresses
-  # the crash dialog, which nothing in a container can dismiss. `-watchdog`
-  # starts BOIII's own hang detector, which reports a wedged script VM to the
-  # log instead of leaving a server that holds its port and answers nothing.
+  # the crash dialog, which nothing in a container can dismiss.
   COD_LAUNCH_CMD=(
     wine boiii.exe
     -headless
     -dedicated
     -quiet-crash
-    -watchdog
   )
 
+  # The Unranked Dedicated Server package ships no sound banks (no zone/snd),
+  # and BOIII treats the first bank that fails to load as fatal. Measured on
+  # mp_biodome: "sound bank ... failed to load", exit 139. -nosnd is BOIII's own
+  # switch for exactly this; a server plays no sound either way.
+  if [[ ! -d "$PLUTAINER_SOURCE_DIR/zone/snd" ]]; then
+    COD_LAUNCH_CMD+=(-nosnd)
+  fi
+
   # BOIII ships its own updater, which is separate from the download above and
-  # runs inside the game. It leaves boiii.exe alone unless asked, but it does
-  # replace the data files next to it, so PLUTAINER_AUTO_UPDATE=false turns off
-  # both halves rather than only the one Plutainer controls.
+  # runs inside the game. PLUTAINER_AUTO_UPDATE=false turns off both halves
+  # rather than only the one Plutainer controls.
   if [[ "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
     COD_LAUNCH_CMD+=(-noupdate)
   fi
