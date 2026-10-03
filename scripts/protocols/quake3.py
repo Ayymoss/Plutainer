@@ -80,16 +80,36 @@ class Quake3Server(object):
 
         body = data[prefix_at + len(self.packet_prefix):]
 
-        # Not every reply carries a payload: t5's zombies build answers an
-        # unexpected connectionless packet with a bare b'disconnect' and no
-        # newline. Treat that as "type, empty body" so callers see an empty
+        # The response type is the first whitespace-delimited token, and the
+        # separator is framing rather than payload. Which whitespace it is
+        # varies by reply, so splitting on one of them only eats content:
+        #
+        #   statusResponse\n\key\value...   query replies use a newline
+        #   print <text>                    rcon replies use a space, and the
+        #                                   first line of the answer sits on
+        #                                   that same line
+        #
+        # Splitting on '\n' alone therefore dropped the first line of every
+        # rcon reply. `status` merely lost a banner, but a dvar query lost the
+        # value line - the whole answer - and `Unknown command "..."` came back
+        # as nothing at all, so a mistyped command was indistinguishable from a
+        # server that had stopped answering.
+        #
+        # Not every reply carries a payload either: t5's zombies build answers
+        # an unexpected connectionless packet with a bare b'disconnect' and no
+        # separator. Treat that as "type, empty body" so callers see an empty
         # result rather than a parse error.
-        first_line_end = body.find(b'\n')
-        if first_line_end == -1:
+        separator = -1
+        for index, char in enumerate(body):
+            if char in b' \t\r\n':
+                separator = index
+                break
+
+        if separator == -1:
             return body.decode('utf-8', 'ignore'), ''
 
-        return (body[:first_line_end].decode('utf-8', 'ignore'),
-                body[first_line_end + 1:].decode('utf-8', 'ignore'))
+        return (body[:separator].decode('utf-8', 'ignore'),
+                body[separator + 1:].decode('utf-8', 'ignore'))
 
     def parse_status(self, data):
         """Parse a `\\key\\value\\key\\value` serverinfo string into a dict.

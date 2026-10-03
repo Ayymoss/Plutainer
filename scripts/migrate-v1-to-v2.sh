@@ -96,7 +96,7 @@ ENGINE_DIRS=(
   "$GAMEFILES_DIR/main"           # plutonium t4
   "$GAMEFILES_DIR/admin"          # plutonium iw5
   "$GAMEFILES_DIR/userraw"        # iw4x
-  "$GAMEFILES_DIR/zone"           # alterware t7x
+  "$GAMEFILES_DIR/zone"           # boiii
   "$PLUTONIUM_DIR/storage/t5"     # plutonium t5
   "$PLUTONIUM_DIR/storage/t6"     # plutonium t6
 )

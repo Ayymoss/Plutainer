@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # The `cod` family: Quake-derived servers Plutainer installs and runs itself —
-# Plutonium (T4/T5/T6/IW5), IW4x, Alterware (T7x) and CoD4x.
+# Plutonium (T4/T5/T6/IW5), IW4x, Ezz BOIII and CoD4x.
 #
 # One entry script (games/codentry.sh) serves all ten games; what differs
 # between them lives in the table below and in the hook functions beneath it.
@@ -51,6 +51,7 @@ cod_resolve_config_path() {
 #   - Everything else (assets, mod scripts, nested cfgs, etc) lands under
 #     asset_root, preserving the seed's relative path.
 # Always idempotent: never overwrites a file that already exists.
+#
 # Args: <game-key> <asset_root> <cfg_root_rel>
 seed_configs() {
   local game="$1" asset_root="$2" cfg_root_rel="${3:-}"
@@ -202,7 +203,7 @@ extract_rcon_password() {
 #
 # T4 and IW5 do not gate queries this way and are left alone: adding an entry
 # makes their whitelist non-empty, which would newly restrict RCON to the
-# listed addresses for no benefit. iw4x and t7x have no such command at all.
+# listed addresses for no benefit. iw4x and boiii have no such command at all.
 #
 # Adding entries does mean T5/T6 RCON becomes "whitelisted + loopback only",
 # which is the same posture upstream's placeholder entries intended (and what
@@ -366,8 +367,8 @@ cod_resolve_admin_endpoint() {
 #
 # Fields set by cod_resolve_game:
 #
-#   COD_ENGINE            plutonium | iw4x | alterware | cod4x
-#   BASE_GAME             t4 | t5 | t6 | iw5 | iw4x | t7x | cod4x
+#   COD_ENGINE            plutonium | iw4x | ezz | cod4x
+#   BASE_GAME             t4 | t5 | t6 | iw5 | iw4x | boiii | cod4x
 #   COD_DEFAULT_PORT      port when PLUTAINER_PORT is unset
 #   COD_SEED_KEY          seed-configs/<key>, empty for no seed bundle
 #   COD_SEED_ASSET_ROOT   where non-cfg seed files land
@@ -379,7 +380,7 @@ cod_resolve_admin_endpoint() {
 #
 # Games this family serves. derive_family() consults this, so adding a game is
 # a change to this file and nothing else.
-COD_GAMES=(t4mp t4sp t5mp t5sp t6mp t6zm iw5mp iw4x t7x cod4x)
+COD_GAMES=(t4mp t4sp t5mp t5sp t6mp t6zm iw5mp iw4x boiii cod4x)
 
 cod_is_known_game() {
   local candidate="$1" game
@@ -428,10 +429,10 @@ cod_resolve_game() {
       COD_SEED_CFG_ROOT="userraw"
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/userraw"
       ;;
-    t7x)
-      COD_ENGINE="alterware"; BASE_GAME="t7x";  COD_DEFAULT_PORT=27017
-      COD_LABEL="Alterware T7x (Black Ops III)"
-      COD_SEED_KEY="t7x"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
+    boiii)
+      COD_ENGINE="ezz";       BASE_GAME="boiii"; COD_DEFAULT_PORT=27017
+      COD_LABEL="Ezz BOIII (Black Ops III)"
+      COD_SEED_KEY="boiii"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
       COD_SEED_CFG_ROOT="zone"
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone"
       ;;
@@ -453,7 +454,7 @@ cod_resolve_game() {
 
 # Where the game looks for cfg files inside the active mod (fs_game), if
 # PLUTAINER_MOD is set. Empty when no mod, or when the family has no such
-# concept — Alterware's MOD is a Steam Workshop ID, not a path.
+# concept — on Black Ops III the MOD is a Steam Workshop ID, not a path.
 cod_resolve_mod_config_dir() {
   MOD_CONFIG_DIR=""
   [[ -z "${PLUTAINER_MOD:-}" ]] && return 0
@@ -609,7 +610,7 @@ cod_update_iw4x() {
   This image was built for an architecture upstream does not publish a launcher
   binary for, and building it from source failed. Tracked as iw4x/launcher#76.
   Options: run iw4x on an amd64 host, or use a different PLUTAINER_GAME —
-  Plutonium (t4/t5/t6/iw5) and Alterware (t7x) are unaffected."
+  Plutonium (t4/t5/t6/iw5) and Ezz BOIII are unaffected."
   fi
 
   if [[ ! -f "$launcher" || "$src" -nt "$launcher" ]]; then
@@ -658,13 +659,15 @@ cod_launch_iw4x() {
   cod_append_map_rotate +map_rotate
 }
 
-# --- Alterware (T7x) -------------------------------------------------------
+# --- Ezz BOIII (Black Ops III) ----------------------------------------------
 
-cod_stage_t7x() {
+BOIII_BINARY_URL="https://r2.ezz.lol/boiii/boiii.exe"
+
+cod_stage_boiii() {
   link_files "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" \
     codlogo.bmp machinecfg steam_api64.dll steamclient64.dll tier0_s64.dll vstdlib_s64.dll
 
-  # T7x decides it is a dedicated server by checking which executables exist:
+  # BOIII decides it is a dedicated server by checking which executables exist:
   #   is_server = has_flag("dedicated") || (!has_client && has_server)
   # Under Wine, flag detection via GetCommandLineW() can be unreliable, so only
   # the server binary is linked, guaranteeing the fallback path fires.
@@ -677,40 +680,119 @@ cod_stage_t7x() {
 
   # zone/ is the engine config dir, so real dir + symlinked contents.
   link_dir_contents "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" zone
+
+  # Workshop maps, if the user mounted any. Optional and usually absent, so it
+  # is tested rather than left to link_dir_contents' warning — and mirrored
+  # rather than symlinked at the top level so a map can also be dropped
+  # straight into the volume.
+  if [[ -d "$PLUTAINER_SOURCE_DIR/usermaps" ]]; then
+    link_dir_contents "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" usermaps
+  fi
 }
 
-cod_update_alterware() {
-  local exe="$PLUTAINER_GAMEFILES_DIR/t7x.exe"
+cod_update_boiii() {
+  local exe="$PLUTAINER_GAMEFILES_DIR/boiii.exe"
   if [[ -f "$exe" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
-    echo "Skipping T7x update because PLUTAINER_AUTO_UPDATE is set to 'false'."
+    echo "Skipping BOIII update because PLUTAINER_AUTO_UPDATE is set to 'false'."
     return 0
   fi
   if [[ -f "$exe" ]]; then
-    echo "Checking for T7x updates..."
+    echo "Checking for BOIII updates..."
   else
-    echo "First container run detected. Downloading T7x... This may take a moment."
+    echo "First container run detected. Downloading BOIII... This may take a moment."
   fi
-  # wget -N is timestamping: it only downloads when upstream is newer.
-  wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" https://master.bo3.eu/t7x/t7x.exe
+  # wget -N is timestamping: it only downloads when upstream is newer. Note that
+  # this replaces boiii.exe, so a hand-built binary in the volume needs
+  # PLUTAINER_AUTO_UPDATE=false to survive a restart.
+  wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" "$BOIII_BINARY_URL"
 }
 
-cod_launch_alterware() {
+# The build published at BOIII_BINARY_URL cannot run a headless dedicated
+# server. Two independent blockers, both fixed upstream but neither in this
+# artifact, which was measured on a clean volume on 2026-08-20:
+#
+#   * the launcher-UI check runs before the client/server split, so a server
+#     fails a check for a file only a client ever downloads. It exits rc=1
+#     having blamed the network, which is not the cause.
+#   * the headless console calls AllocConsole() at static-init time. Under Wine
+#     with no display that starts conhost.exe and the process blocks on its
+#     pipe forever: one thread, 0% CPU, no UDP socket, nothing in `docker logs`.
+#
+# The second is why this refuses rather than warns. A warning would be followed
+# by a container that sits at "Up" indefinitely, answering nothing and printing
+# nothing, which is the least debuggable failure this image can produce.
+#
+# Pinned by the hash of the *known-bad* artifact rather than of a known-good
+# one, so the day anything else is published the check stops firing on its own
+# and no release of this image is needed to unblock it.
+BOIII_KNOWN_BAD_SHA256="06d897a6945a5fe8e8dd8312dcda34f963cf188dd596bc453855309c11ea97c7"
+
+cod_validate_boiii() {
+  local exe="$PLUTAINER_GAMEFILES_DIR/boiii.exe"
+
+  [[ -f "$exe" ]] || hold_indefinitely     "boiii.exe is missing from $PLUTAINER_GAMEFILES_DIR and could not be downloaded from $BOIII_BINARY_URL."
+
+  local sum
+  sum="$(sha256sum "$exe" | cut -d' ' -f1)"
+  [[ "$sum" == "$BOIII_KNOWN_BAD_SHA256" ]] || return 0
+
+  hold_indefinitely "The boiii.exe published at $BOIII_BINARY_URL cannot run a dedicated server in
+a container, so this server has not been started.
+
+It has two faults, both fixed in the client's source but neither in the build
+being served:
+
+  * it checks for a launcher file that only a game client ever downloads, then
+    exits reporting that it needs an internet connection. The connection is
+    not the problem.
+  * in headless mode it tries to open a Windows console. There is no display
+    here, so it waits on that console forever - no map, no open port, and no
+    output at all.
+
+Until a newer build is published, supply your own boiii.exe:
+
+  1. Build it, or obtain a build that carries both fixes.
+  2. Put it at <your app volume>/runtime/gamefiles/boiii.exe
+  3. Set PLUTAINER_AUTO_UPDATE=false, or this image will download over it
+     again on the next start.
+
+Set PLUTAINER_AUTO_UPDATE=false and restart once that binary is in place."
+}
+
+cod_launch_boiii() {
   COD_WORKDIR="$PLUTAINER_GAMEFILES_DIR"
-  # `-headless` makes t7x skip Sys_CreateConsole and print to stdout instead of
-  # building a Win32 console window, so no X display is needed. Without it the
-  # server hangs on window creation ("nodrv_CreateWindow") and never binds its
-  # port — which is why this image used to ship Xvfb.
+
+  # `-headless` is what removes the X dependency: BOIII's console component
+  # builds a real Win32 console *window* unless it is headless, and under Wine
+  # with no display the process hangs on window creation
+  # ("nodrv_CreateWindow") and never binds its port. `-quiet-crash` suppresses
+  # the crash dialog, which nothing in a container can dismiss. `-watchdog`
+  # starts BOIII's own hang detector, which reports a wedged script VM to the
+  # log instead of leaving a server that holds its port and answers nothing.
   COD_LAUNCH_CMD=(
-    wine t7x.exe
+    wine boiii.exe
     -headless
     -dedicated
+    -quiet-crash
+    -watchdog
+  )
+
+  # BOIII ships its own updater, which is separate from the download above and
+  # runs inside the game. It leaves boiii.exe alone unless asked, but it does
+  # replace the data files next to it, so PLUTAINER_AUTO_UPDATE=false turns off
+  # both halves rather than only the one Plutainer controls.
+  if [[ "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
+    COD_LAUNCH_CMD+=(-noupdate)
+  fi
+
+  COD_LAUNCH_CMD+=(
     +set fs_game "${PLUTAINER_MOD:-}"
     +set net_port "$ACTIVE_PORT"
     +set logfile "2"
     +exec "$CONFIG_FILE"
   )
   cod_append_extra_args
-  # T7x has never had a map-rotate argument.
+  cod_append_map_rotate +map_rotate
 }
 
 # --- CoD4x -----------------------------------------------------------------
@@ -730,7 +812,7 @@ cod_update_cod4x() {
   [[ -x "$COD4X_ASSET_DIR/$COD4X_BINARY" ]] || hold_indefinitely \
     "CoD4x is not available in this image (no ${COD4X_BINARY}).
   Upstream publishes a 32-bit x86 Linux binary only, so CoD4x cannot run on this
-  architecture. Plutonium, IW4x and Alterware titles are unaffected."
+  architecture. Plutonium, IW4x and Ezz BOIII titles are unaffected."
 
   local dest="$PLUTAINER_GAMEFILES_DIR/$COD4X_BINARY"
 
@@ -784,10 +866,52 @@ cod_launch_cod4x() {
 
 # --- shared launch-argument helpers ----------------------------------------
 
+# A `-flag` appended after the `+` block is silently eaten by the command
+# before it, because the engine's console parser reads everything up to the
+# next `+` as arguments to that command. Measured: PLUTAINER_EXTRA_ARGS
+# "-prime-first-spawn" produced
+#
+#   ... +exec server_zm.cfg -prime-first-spawn +map_rotate
+#
+# so the server ran `exec "server_zm.cfg -prime-first-spawn"`, which fails.
+# It then started with no config at all — no rcon password, no map rotation,
+# sitting in a default lobby — while the config file on disk was perfectly
+# correct, which is about as misleading as a failure gets.
+#
+# So extras are split: engine flags go in front of the `+` block where the
+# engine reads them, console commands stay at the end where they belong. A
+# value following a flag travels with it (`-foo bar`), and anything before the
+# first `+` in COD_LAUNCH_CMD is the executable and this engine's own flags.
 cod_append_extra_args() {
-  # Intentionally word-split: users pass several flags in one variable.
+  [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]] || return 0
+
+  # Intentionally word-split: users pass several arguments in one variable.
   # shellcheck disable=SC2206
-  [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]] && COD_LAUNCH_CMD+=( ${PLUTAINER_EXTRA_ARGS} )
+  local -a extras=( ${PLUTAINER_EXTRA_ARGS} )
+  local -a flag_args=() cmd_args=()
+  local arg in_flag=""
+
+  for arg in "${extras[@]}"; do
+    case "$arg" in
+      -*) in_flag="yes"; flag_args+=("$arg") ;;
+      +*) in_flag="";    cmd_args+=("$arg")  ;;
+      *)  if [[ -n "$in_flag" ]]; then flag_args+=("$arg"); else cmd_args+=("$arg"); fi ;;
+    esac
+  done
+
+  if (( ${#flag_args[@]} )); then
+    local -a head=() tail=()
+    local seen_plus=""
+    for arg in "${COD_LAUNCH_CMD[@]}"; do
+      if [[ -z "$seen_plus" && "$arg" == +* ]]; then
+        seen_plus="yes"
+      fi
+      if [[ -n "$seen_plus" ]]; then tail+=("$arg"); else head+=("$arg"); fi
+    done
+    COD_LAUNCH_CMD=( "${head[@]}" "${flag_args[@]}" ${tail[@]+"${tail[@]}"} )
+  fi
+
+  (( ${#cmd_args[@]} )) && COD_LAUNCH_CMD+=( "${cmd_args[@]}" )
   return 0
 }
 

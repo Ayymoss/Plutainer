@@ -30,12 +30,14 @@ SEED_ROOT="$REPO_ROOT/seed-configs"
 # src-subpath is relative to the archive root and its *contents* are copied to
 # seed-configs/<game>/<dest-subdir>. Omit dest-subdir to land at the game root.
 # The layouts differ per repo because each community author picked their own.
+# Only the subpaths Plutainer actually uses are vendored: the Dss0 bundle also
+# carries a t7x/ tree, which belongs to a different Black Ops III client.
 SEEDS=(
   "t4|xerxes-at/T4ServerConfigs|main|main"
   "t5|xerxes-at/T5ServerConfig|master|localappdata/Plutonium/storage/t5"
   "t6|xerxes-at/T6ServerConfigs|master|localappdata/Plutonium/storage/t6"
   "iw5|xerxes-at/IW5ServerConfig|master|admin"
-  "t7x|Dss0/t7-server-config|main|zone:zone,t7x:t7x"
+  "boiii|Dss0/t7-server-config|main|zone:zone"
   "iw4x|iw4x/iw4-server-configs|main|userraw:userraw"
 )
 
@@ -81,6 +83,14 @@ die() { printf '[seeds] ERROR: %s\n' "$*" >&2; exit 1; }
 # "no entries = all IPs may send RCON" default. RCON still requires the
 # password, which every seed ships empty, so this widens nothing until the
 # operator sets one. Re-enable by uncommenting and putting in real addresses.
+# BOIII hosts multiplayer and zombies. The upstream bundle is written for a
+# client that also runs campaign co-op, and a seeded config is a suggestion
+# that the mode works, so the one config Plutainer cannot honour is dropped
+# here rather than filtered at runtime.
+drop_campaign_config() {
+  rm -f "$1/zone/server_cp.cfg"
+}
+
 harden_rcon_for_docker() {
   local game_dir="$1" f
   while IFS= read -r -d '' f; do
@@ -231,6 +241,7 @@ refresh_one() {
   find "$game_dir" -type f \( -iname '*.bat' -o -iname '*.sh' -o -iname 'README*' \) -delete
 
   [[ "$game" == "iw4x" ]] && apply_iw4x_rotation "$game_dir"
+  [[ "$game" == "boiii" ]] && drop_campaign_config "$game_dir"
 
   harden_rcon_for_docker "$game_dir"
 
@@ -272,7 +283,7 @@ main() {
     matched=$((matched + 1))
   done
 
-  [[ $matched -gt 0 ]] || die "no matching games (known: t4 t5 t6 iw5 t7x iw4x)"
+  [[ $matched -gt 0 ]] || die "no matching games (known: t4 t5 t6 iw5 boiii iw4x)"
   log "done — review with: git -C '$REPO_ROOT' diff --stat seed-configs/"
 }
 

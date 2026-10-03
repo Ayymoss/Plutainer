@@ -11,7 +11,7 @@ What each game needs from you, and what Plutainer supplies. Find your game, chec
 | Black Ops II | `t6mp` `t6zm` | yes | 4976 | `dedicated.cfg`, `dedicated_zm.cfg` |
 | Modern Warfare 3 | `iw5mp` | yes | 27016 | `server.cfg` |
 | Modern Warfare 2 | `iw4x` | no | 28960 | `server.cfg`, `serverlan.cfg`, `partyserver.cfg`, `partyserverlan.cfg` |
-| Black Ops III | `t7x` | no | 27017 | `server.cfg`, `server_zm.cfg`, `server_cp.cfg` |
+| Black Ops III | `boiii` | no | 27017 | `server.cfg`, `server_zm.cfg` |
 | Modern Warfare | `cod4x` | token, to be listed | 28960 | `server.cfg` |
 | 7 Days to Die | `7dtd` | no | 26900 | `serverconfig.xml`, from the installed server |
 | Counter-Strike 2 | `cs2` | token, to be listed | 27015 | `server.cfg` |
@@ -45,9 +45,11 @@ On first start `iw4x-launcher` fetches another 1–2 GB into `app/runtime/gamefi
 
 > **Never put your own files in `zone/patch/` or `zone/zonebuilder/`.** A *symlink* there stops the launcher extracting at all, which silently disables updates. Custom scripts and assets go in `userraw/`, which the updater never touches.
 
-### T7x
+### BOIII
 
-BO3 server files: `BlackOps3_UnrankedDedicatedServer.exe`, `zone/`, `machinecfg`, `codlogo.bmp`, and the `steam_api64` / `steamclient64` / `tier0_s64` / `vstdlib_s64` DLLs. Plutainer downloads `t7x.exe` itself and re-fetches only when upstream is newer.
+BO3 server files: `BlackOps3_UnrankedDedicatedServer.exe`, `zone/`, `machinecfg`, `codlogo.bmp`, and the `steam_api64` / `steamclient64` / `tier0_s64` / `vstdlib_s64` DLLs. Plutainer downloads `boiii.exe` itself and re-fetches only when upstream is newer.
+
+Workshop maps go in `usermaps/<map name>/`, each holding that map's `workshop.json` and `zone/`. The directory is optional; when present it is mirrored into the volume, so one copy can serve several servers.
 
 ### CoD4x
 
@@ -133,11 +135,27 @@ The server process runs, binds its port, and never loads a map — a client sees
 
 T5 also only answers status queries from localhost, so external query tools see nothing even when it's perfectly healthy. Plutainer's healthcheck runs inside the container, so it is unaffected.
 
-### T7x (Black Ops III)
+### BOIII (Black Ops III)
 
-Launches with `-headless`, which is what removes the need for a virtual display — without it the server hangs on window creation and never binds its port. `-dedicated` is passed separately and is also required.
+Black Ops III is served by **Ezz BOIII**. If you ran `t7x` before, set `PLUTAINER_GAME=boiii` and change nothing else: the gamefiles mount, `app/configs/` and the `zone/` config directory are the same. A `t7x` tag now refuses to start and says so.
+
+> **The currently published `boiii.exe` cannot run a dedicated server, and Plutainer will refuse to start it.**
+>
+> The build served from `r2.ezz.lol` has two faults, neither of which is in the client's source any more: it checks for a launcher file that only a game client downloads and then exits blaming your internet connection, and in headless mode it waits forever on a Windows console that a container has no display for. The second produces no output at all, so rather than leave you with a container that is `Up` and silent, Plutainer stops and explains.
+>
+> Until a newer build is published, put a `boiii.exe` carrying both fixes at `app/runtime/gamefiles/boiii.exe` and set `PLUTAINER_AUTO_UPDATE=false`, or the next start downloads over it.
+>
+> The check is keyed to the hash of that one known-bad build, so it stops applying by itself the moment anything else is published — no image update needed.
+
+Multiplayer and zombies only, so no campaign config is seeded.
+
+It launches with `-headless`, which is what removes the need for a virtual display — without it the server hangs on window creation and never binds its port. `-dedicated` is passed separately and is also required.
 
 `PLUTAINER_MOD` here is a **Steam Workshop ID**, not a folder name.
+
+It also gets `-quiet-crash`, so a crash cannot stop on a dialog nobody can dismiss, and `-watchdog`, which reports a hung script VM to the log rather than leaving a server that holds its port and answers nothing.
+
+**`PLUTAINER_AUTO_UPDATE=false` means more here than for the other games.** BOIII ships its own in-game updater alongside the binary Plutainer downloads. Setting the variable to `false` turns off both: Plutainer stops re-fetching `boiii.exe`, and `-noupdate` stops the in-game updater refreshing the data files beside it. That is the setting to use if you have put a build of your own in `app/runtime/gamefiles/boiii.exe` — without it, the next start replaces it.
 
 ### CoD4x (Modern Warfare)
 
@@ -176,7 +194,7 @@ Upstream ships `sv_maprotation` commented out, which would leave `+map_rotate` w
 - **The SteamCMD games are amd64-only.** SteamCMD ships x86_64 binaries only, so the arm64 image carries no copy of it and refuses with an explanation. It is a capability check, not an architecture check: the day an arm64 SteamCMD exists, this starts working with no code change.
 - **Nebula is tested on amd64.** The arm64 image can translate x86_64 Windows programs through Hangover, but the DSP/BepInEx combination remains best-effort until it has equivalent live coverage.
 
-Plutonium and T7x work on both. If an arm64 build fails outright, `:latest` publishes amd64-only rather than being held back — check with `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` before upgrading an arm64 host.
+Plutonium and BOIII work on both. If an arm64 build fails outright, `:latest` publishes amd64-only rather than being held back — check with `docker manifest inspect ghcr.io/ayymoss/plutainer:latest` before upgrading an arm64 host.
 
 ## Bundled configs
 
@@ -188,7 +206,7 @@ On first start Plutainer copies a working config into `app/configs/`. Existing f
 | T5 | [xerxes-at/T5ServerConfig](https://github.com/xerxes-at/T5ServerConfig) |
 | T6 | [xerxes-at/T6ServerConfigs](https://github.com/xerxes-at/T6ServerConfigs) |
 | IW5 | [xerxes-at/IW5ServerConfig](https://github.com/xerxes-at/IW5ServerConfig) |
-| T7x | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) — includes the lobby scripts `sv_lobby_mode` needs |
+| BOIII | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) — the `zone/` configs only; the bundle's `t7x/` tree is another client's data directory |
 | IW4x | [iw4x/iw4-server-configs](https://github.com/iw4x/iw4-server-configs) |
 | CoD4x | Maintained in this repo, adapted from [matracey/docker-cod4](https://github.com/matracey/docker-cod4) |
 | Nebula | Maintained in this repo from the defaults in Nebula's [headless-server guide](https://github.com/NebulaModTeam/nebula/wiki/Setup-Headless-Server) |
