@@ -141,7 +141,7 @@ Black Ops III is served by **Ezz BOIII**. If you ran `t7x` before, set `PLUTAINE
 
 Plutainer downloads the latest `boiii.exe` from [Ezz-lol/boiii-free releases](https://github.com/Ezz-lol/boiii-free/releases), and BOIII's own data files (scripts, Lua, game settings, dvar name tables) from its update server into `app/runtime/boiii/data/`. A BOIII client fetches those itself; a dedicated server never does, and without them it refuses to start, or starts and reports every server setting as a number instead of a name.
 
-> **Zombies does not work on the released `boiii.exe` (v3.0.0).** Any `zm_` map dies while loading with `Could not load default asset '' for asset type 'rawfile'`. The server never switches into zombies mode, so the zombies common files are never loaded. Multiplayer is unaffected. Until a release carries the fix, zombies needs a patched `boiii.exe` at `app/runtime/gamefiles/boiii.exe` with `PLUTAINER_AUTO_UPDATE=false`.
+> **Zombies does not work on the released `boiii.exe` (v3.0.0).** Any `zm_` map dies while loading with `Could not load default asset '' for asset type 'rawfile'`. The server never switches into zombies mode, so the zombies common files are never loaded. Multiplayer is unaffected. The fix is [Ezz-lol/boiii-free#311](https://github.com/Ezz-lol/boiii-free/pull/311); until a release carries it, zombies needs a patched `boiii.exe` at `app/runtime/gamefiles/boiii.exe` with `PLUTAINER_AUTO_UPDATE=false`.
 
 Multiplayer and zombies only, so no campaign config is seeded.
 
