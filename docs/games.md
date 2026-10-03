@@ -139,13 +139,9 @@ T5 also only answers status queries from localhost, so external query tools see 
 
 Black Ops III is served by **Ezz BOIII**. If you ran `t7x` before, set `PLUTAINER_GAME=boiii` and change nothing else: the gamefiles mount, `app/configs/` and the `zone/` config directory are the same. A `t7x` tag now refuses to start and says so.
 
-> **The currently published `boiii.exe` cannot run a dedicated server, and Plutainer will refuse to start it.**
->
-> The build served from `r2.ezz.lol` has two faults, neither of which is in the client's source any more: it checks for a launcher file that only a game client downloads and then exits blaming your internet connection, and in headless mode it waits forever on a Windows console that a container has no display for. The second produces no output at all, so rather than leave you with a container that is `Up` and silent, Plutainer stops and explains.
->
-> Until a newer build is published, put a `boiii.exe` carrying both fixes at `app/runtime/gamefiles/boiii.exe` and set `PLUTAINER_AUTO_UPDATE=false`, or the next start downloads over it.
->
-> The check is keyed to the hash of that one known-bad build, so it stops applying by itself the moment anything else is published — no image update needed.
+Plutainer downloads the latest `boiii.exe` from [Ezz-lol/boiii-free releases](https://github.com/Ezz-lol/boiii-free/releases), and BOIII's own data files (scripts, Lua, game settings, dvar name tables) from its update server into `app/runtime/boiii/data/`. A BOIII client fetches those itself; a dedicated server never does, and without them it refuses to start, or starts and reports every server setting as a number instead of a name.
+
+> **Zombies does not work on the released `boiii.exe` (v3.0.0).** Any `zm_` map dies while loading with `Could not load default asset '' for asset type 'rawfile'`. The server never switches into zombies mode, so the zombies common files are never loaded. Multiplayer is unaffected. Until a release carries the fix, zombies needs a patched `boiii.exe` at `app/runtime/gamefiles/boiii.exe` with `PLUTAINER_AUTO_UPDATE=false`.
 
 Multiplayer and zombies only, so no campaign config is seeded.
 
@@ -153,9 +149,9 @@ It launches with `-headless`, which is what removes the need for a virtual displ
 
 `PLUTAINER_MOD` here is a **Steam Workshop ID**, not a folder name.
 
-It also gets `-quiet-crash`, so a crash cannot stop on a dialog nobody can dismiss, and `-watchdog`, which reports a hung script VM to the log rather than leaving a server that holds its port and answers nothing.
+It also gets `-quiet-crash`, so a crash cannot stop on a dialog nobody can dismiss, and `-nosnd` when the gamefiles have no `zone/snd/`. The Unranked Dedicated Server package ships no sound banks, and BOIII stops the server on the first bank it cannot load.
 
-**`PLUTAINER_AUTO_UPDATE=false` means more here than for the other games.** BOIII ships its own in-game updater alongside the binary Plutainer downloads. Setting the variable to `false` turns off both: Plutainer stops re-fetching `boiii.exe`, and `-noupdate` stops the in-game updater refreshing the data files beside it. That is the setting to use if you have put a build of your own in `app/runtime/gamefiles/boiii.exe` — without it, the next start replaces it.
+**`PLUTAINER_AUTO_UPDATE=false` means more here than for the other games.** BOIII ships its own in-game updater alongside the binary Plutainer downloads. Setting the variable to `false` turns off both: Plutainer stops re-fetching `boiii.exe` and the data files, and `-noupdate` stops the in-game updater. That is the setting to use if you have put a build of your own in `app/runtime/gamefiles/boiii.exe` — without it, the next start replaces it.
 
 ### CoD4x (Modern Warfare)
 
