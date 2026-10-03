@@ -91,6 +91,34 @@ drop_campaign_config() {
   rm -f "$1/zone/server_cp.cfg"
 }
 
+# The upstream MP config execs only the gametype file. For the client it was
+# written for, that file came from its own disk copy, which chains the MP
+# defaults; BOIII serves the stock copy from the fastfile, which does not, and
+# a dedicated server cannot override it. Without the defaults every gametype
+# setting stays unset and players spawn with fists whatever their class.
+# The zombies config already execs its defaults explicitly; this puts the same
+# two lines, from the same stock fastfile, in front of the MP gametype exec.
+apply_boiii_mp_defaults() {
+  local f="$1/zone/server.cfg"
+  [[ -f "$f" ]] || die "boiii: zone/server.cfg missing"
+  if grep -q 'gamesettings/mp/gamesettings_default.cfg' "$f"; then
+    log "  server.cfg already execs the MP defaults, leaving it alone"
+    return
+  fi
+  grep -qE '^exec "gamedata/gamesettings/mp/' "$f" || die "boiii: no MP gametype exec in server.cfg (upstream layout changed?)"
+  python3 - "$f" <<'PY'
+import re, sys
+p = sys.argv[1]
+s = open(p, newline="").read()
+nl = "\r\n" if "\r\n" in s else "\n"
+lines = ('exec "gamedata/gamesettings/mp/gamesettings_default.cfg"      // Leave this as is' + nl +
+         'exec "gamedata/configs/common/default_xboxlive.cfg"           // Leave this as is' + nl)
+s = re.sub(r'^(?=exec "gamedata/gamesettings/mp/)', lambda m: lines, s, count=1, flags=re.M)
+open(p, "w", newline="").write(s)
+PY
+  log "  added the MP gametype defaults to server.cfg"
+}
+
 harden_rcon_for_docker() {
   local game_dir="$1" f
   while IFS= read -r -d '' f; do
@@ -242,6 +270,7 @@ refresh_one() {
 
   [[ "$game" == "iw4x" ]] && apply_iw4x_rotation "$game_dir"
   [[ "$game" == "boiii" ]] && drop_campaign_config "$game_dir"
+  [[ "$game" == "boiii" ]] && apply_boiii_mp_defaults "$game_dir"
 
   harden_rcon_for_docker "$game_dir"
 

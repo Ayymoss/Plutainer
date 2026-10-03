@@ -4,7 +4,7 @@ commit:     f1547ae09851aa48ac71c338a78493eb88c85d49
 tree:       https://github.com/Dss0/t7-server-config/tree/f1547ae09851aa48ac71c338a78493eb88c85d49
 subpaths:   zone:zone
 license:    none declared
-fetched:    2026-08-19T10:50:45Z
+fetched:    2026-10-03T23:22:46Z
 fetched-by: tools/refresh-seeds.sh
 
 Vendored copy. Do not hand-edit: run tools/refresh-seeds.sh boiii instead,
