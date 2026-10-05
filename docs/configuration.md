@@ -19,7 +19,7 @@ Plutonium games (`t4*`, `t5*`, `t6*`, `iw5mp`) also require `PLUTO_SERVER_KEY`.
 | `PLUTAINER_RCON_PASSWORD` | Sets `rcon_password` in your config at startup. Opt-in — unset leaves your config untouched | unset |
 | `PLUTAINER_SERVER_NAME` | Name shown in Plutainer's startup logs. On the SteamCMD games it also sets the real server name (7DTD's XML `ServerName`, Source's `hostname`); CoD engines still use `sv_hostname` in their cfg | per family |
 | `PLUTAINER_MOD` | Mod folder name. On BOIII, a Steam Workshop ID instead | unset |
-| `PLUTAINER_MAP_ROTATE` | `false` drops the automatic `+map_rotate` (`+start_map_rotate` on IW5), leaving map choice to your cfg or playlist | `true` |
+| `PLUTAINER_MAP_ROTATE` | `false` drops the automatic `+map_rotate` (`+start_map_rotate` on IW5), leaving map choice to your cfg or playlist. BOIII never gets it, see [games.md](games.md#boiii-black-ops-iii) | `true` |
 | `PLUTAINER_EXTRA_ARGS` | Extra arguments appended to the launch command | unset |
 | `PLUTAINER_AUTO_UPDATE` | `false` skips update checks at startup | `true` |
 | `PLUTAINER_HEALTHCHECK` | `false` disables the healthcheck | `true` |

@@ -141,19 +141,21 @@ Black Ops III is served by **Ezz BOIII**. If you ran `t7x` before, set `PLUTAINE
 
 Plutainer downloads the latest `boiii.exe` from [Ezz-lol/boiii-free releases](https://github.com/Ezz-lol/boiii-free/releases), and BOIII's own data files (scripts, Lua, game settings, dvar name tables) from its update server into `app/runtime/boiii/data/`. A BOIII client fetches those itself; a dedicated server never does, and without them it refuses to start, or starts and reports every server setting as a number instead of a name.
 
-> **Zombies does not work on the released `boiii.exe` (v3.0.0).** Any `zm_` map dies while loading with `Could not load default asset '' for asset type 'rawfile'`. The server never switches into zombies mode, so the zombies common files are never loaded. Multiplayer is unaffected. The fix is [Ezz-lol/boiii-free#311](https://github.com/Ezz-lol/boiii-free/pull/311); until a release carries it, zombies needs a patched `boiii.exe` at `app/runtime/gamefiles/boiii.exe` with `PLUTAINER_AUTO_UPDATE=false`.
-
 Multiplayer and zombies only, so no campaign config is seeded.
 
-**Multiplayer configs must exec the gametype defaults, or every player spawns with fists.** The seeded `server.cfg` does this for you, in the same way the zombies config always has:
+**The first map is loaded by a lobby script, not by `+map_rotate`.** Plutainer seeds `app/runtime/gamefiles/boiii/lobby_scripts/server_lobby_selector/`, the lobby script from the same community bundle as the configs. It is what makes these config lines work:
 
 ```
-exec "gamedata/gamesettings/mp/gamesettings_default.cfg"
-exec "gamedata/configs/common/default_xboxlive.cfg"
-exec "gamedata/gamesettings/mp/gamesettings_tdm.cfg"   // your gametype
+set sv_lobby_mode "zm"     // which lobby to host: mp or zm
+set sv_skip_lobby "1"      // start the first map in sv_maprotation straight away
+set sv_maprotation "gametype zclassic map zm_tomb"
 ```
 
-If you are coming from T7x, your existing `server.cfg` has only the last line. Under T7x that was enough, because its gametype files came from the seed's `t7x/gamesettings/` folder, which ran the defaults for you. BOIII uses the game's own gametype files, which don't, and a dedicated server ignores BOIII's gamesettings override folders. Plutainer notices a config like that, runs the two lines before it, and says so in the log. Add them to your config to make that message go away. Custom gametype settings still go in `server.cfg` as `gts <setting> <value>` lines, after the gametype exec.
+No game reads those two settings itself. Without the script, the server hosts a multiplayer lobby and never loads a map, whatever the config says. Starting a map with `+map_rotate` instead does not work for zombies: it fires before the lobby exists, while the server is still in multiplayer mode, so a `zm_` map loads the multiplayer common files and dies with `Could not load default asset '' for asset type 'rawfile'` (`perklistitemfactory.lua`). T7x behaves the same way, which is why it never used `+map_rotate`. So BOIII ignores `PLUTAINER_MAP_ROTATE`. The script is put back on every start if it is missing.
+
+If you are coming from T7x, your configs already have these lines. Its copy of the script lived in `t7x/lobby_scripts/`, which BOIII does not read.
+
+With `sv_skip_lobby "0"` the server waits in the lobby instead, which is what playlists need.
 
 It launches with `-headless`, which is what removes the need for a virtual display — without it the server hangs on window creation and never binds its port. `-dedicated` is passed separately and is also required.
 
