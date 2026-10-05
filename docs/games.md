@@ -214,7 +214,7 @@ On first start Plutainer copies a working config into `app/configs/`. Existing f
 | T5 | [xerxes-at/T5ServerConfig](https://github.com/xerxes-at/T5ServerConfig) |
 | T6 | [xerxes-at/T6ServerConfigs](https://github.com/xerxes-at/T6ServerConfigs) |
 | IW5 | [xerxes-at/IW5ServerConfig](https://github.com/xerxes-at/IW5ServerConfig) |
-| BOIII | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) — the `zone/` configs only; the bundle's `t7x/` tree is another client's data directory |
+| BOIII | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) — the `zone/` configs, and the `server_lobby_selector` lobby script from its `t7x/` tree, moved to `boiii/lobby_scripts/`. The rest of `t7x/` is another client's data directory and is not shipped |
 | IW4x | [iw4x/iw4-server-configs](https://github.com/iw4x/iw4-server-configs) |
 | CoD4x | Maintained in this repo, adapted from [matracey/docker-cod4](https://github.com/matracey/docker-cod4) |
 | Nebula | Maintained in this repo from the defaults in Nebula's [headless-server guide](https://github.com/NebulaModTeam/nebula/wiki/Setup-Headless-Server) |
