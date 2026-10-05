@@ -16,7 +16,9 @@ nothing here consumed it, and the RCON `status` text it parsed is printed
 verbatim by rcon-cli anyway.
 """
 
+import os
 import socket
+import time
 
 
 class ResponseTimeout(Exception):
@@ -33,6 +35,15 @@ class Quake3Server(object):
     # Every other engine here answers with the prefix at offset 0. Scan a short
     # window rather than demanding offset 0, so one parser covers both.
     prefix_search_window = 8
+
+    # IW5 silently drops an rcon command that arrives too soon after the
+    # previous one: measured from loopback, 0.2s later is dropped and 0.5s
+    # later is answered. Back-to-back rcon-cli calls land inside that window.
+    # The old retry loop hid it by resending; a command is sent once now (see
+    # rcon), so consecutive commands are spaced out instead. The last send
+    # time is kept per port in /tmp, which every rcon-cli call in the
+    # container shares.
+    min_rcon_gap = 1.0
 
     def __init__(self, server, rcon_password=''):
         try:
@@ -76,6 +87,7 @@ class Quake3Server(object):
         # the server while the next map loads, so the 1s retry loop used for
         # queries resent it and the rotation skipped maps. Loopback UDP does
         # not drop packets, so waiting longer costs nothing a retry would buy.
+        self.wait_for_rcon_gap()
         try:
             r_cmd = self.command('rcon "%s" %s' % (self.rcon_password, cmd),
                                  timeout=timeout, retries=1)
@@ -85,6 +97,21 @@ class Quake3Server(object):
         if r_cmd[1] in ('No rconpassword set on the server.\n', 'Bad rconpassword.\n'):
             raise Exception(r_cmd[1][:-1])
         return r_cmd
+
+    def wait_for_rcon_gap(self):
+        stamp = '/tmp/plutainer-rcon-%d.last' % self.port
+        try:
+            wait = self.min_rcon_gap - (time.time() - os.path.getmtime(stamp))
+            if wait > 0:
+                time.sleep(wait)
+        except OSError:
+            pass
+        try:
+            with open(stamp, 'a'):
+                pass
+            os.utime(stamp)
+        except OSError:
+            pass
 
     def parse_packet(self, data):
         """Split a reply into (response type, payload), both decoded."""
