@@ -566,7 +566,15 @@ cod_launch_plutonium() {
 
 cod_stage_iw4x() {
   link_files "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" \
-    main usermaps binkw32.dll localization.txt mss32.dll
+    usermaps binkw32.dll localization.txt mss32.dll
+
+  # main/ is mirrored, not linked: IW4x now moves its own files into
+  # main/iw4x/x86/ (the launcher's assets archive, then the game's zone
+  # conversion on first start), and through a symlinked main/ both writes land
+  # in the read-only mount:
+  #   [E] exception caught in main: failed to create directory: .../main/iw4x/x
+  #   "main/iw4x/x86/html/img" could not be created: Access denied..
+  link_dir_contents "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" main
 
   # userraw/ is the engine config dir, so it must be a real writable directory
   # for the cfg fan-out to land in.
