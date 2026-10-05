@@ -135,6 +135,8 @@ Each family owns one entry script and one library. Table-driven families resolve
 
    `zone/english` and `zone/dlc` *are* mirrored. Every component other than rawfiles stages downloads and renames into place, which replaces a symlink rather than writing through it, so mirroring is safe there — and useful, since the reconciler hash-validates existing host fastfiles and skips re-downloading matches.
 
+   **`main/` is mirrored too, never symlinked — since October 2026.** IW4x now moves its own files under `main/iw4x/x86/` (and zone content under `zone/iw4x/x86/`): launcher 1.1.8-b.24 extracts its assets archive there and aborts on `failed to create directory: .../main/iw4x/x`, and an older launcher gets as far as the game, whose first-start zone conversion exits on `"main/iw4x/x86/html/img" could not be created: Access denied`. Both were measured with `main` linked into the read-only mount, on `:latest` as well as the branch. Upgrading a volume from the symlinked layout works: `link_dir_contents` replaces the `main` symlink with a real directory, and the conversion runs. Its log is `runtime/gamefiles/zone-conversion.log`.
+
    A launcher failure is fatal only on first run (no `iw4x.exe` yet); otherwise it warns and starts the existing install.
 
    **Alterware (T7x).** Alterware (T7x/BO3) entrypoint. Symlinks game files, uses `wget -N` (timestamping) to fetch `t7x.exe` only when upstream is newer, seeds Dss0/t7-server-config bundle, fans out config symlinks, `launch_game wine t7x.exe -headless -dedicated ...`. No mod dir (alterware MOD is a Steam Workshop ID).
