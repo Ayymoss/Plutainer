@@ -6,7 +6,7 @@
 # There are three families, and they are *platforms* rather than engines:
 #
 #   cod     Quake-derived servers Plutainer installs and runs itself
-#           (Plutonium, IW4x, Alterware, CoD4x). You supply the game files.
+#           (Plutonium, IW4x, Ezz BOIII, CoD4x). You supply the game files.
 #   steam   Servers SteamCMD installs (7DTD, CS2, L4D2, HL2:DM). You supply
 #           nothing.
 #   nebula  Dyson Sphere Program under Wine with the Nebula multiplayer mod.
@@ -186,7 +186,7 @@ derive_family() {
 # tried most-specific first, so a game inherits its engine's behaviour and
 # overrides only what genuinely differs:
 #
-#   cod_launch_t7x   ->  cod_launch_alterware
+#   cod_stage_t6zm   ->  cod_stage_t6
 #   steam_seed_cs2   ->  steam_seed_srcds
 #
 # Run <family>_<hook>_<suffix> for the first suffix that exists; return 1 if
@@ -247,17 +247,34 @@ plutainer_require_hooks() {
   return 1
 }
 
+# A tag that used to work is not the same as one that never did, and the
+# difference is the whole message: "unknown" sends someone hunting for a typo.
+# Returns 0 when it recognised and explained the tag.
+plutainer_explain_retired_game() {
+  case "$1" in
+    t7x)
+      echo "[ERROR] 't7x' is no longer supported. Black Ops III is served by" >&2
+      echo "        Ezz BOIII now: set PLUTAINER_GAME=boiii." >&2
+      echo "        Nothing else changes — same gamefiles mount, same" >&2
+      echo "        app/configs/, same zone/ config directory." >&2
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 # Populate GAME_TYPE, GAME_NAME, BASE_GAME, CONFIG_FILE, CUSTOM_PORT,
 # HEALTHCHECK_FLAG from PLUTAINER_*.
 detect_game_type() {
   if [[ -z "${PLUTAINER_GAME:-}" ]]; then
-    echo "[ERROR] No game specified. Set PLUTAINER_GAME (e.g. t6zm, iw4x, t7x)." >&2
+    echo "[ERROR] No game specified. Set PLUTAINER_GAME (e.g. t6zm, iw4x, boiii)." >&2
     return 1
   fi
 
   GAME_NAME="${PLUTAINER_GAME}"
   GAME_TYPE="$(derive_family "$GAME_NAME")" || {
-    echo "[ERROR] Unknown PLUTAINER_GAME value: '${GAME_NAME}'." >&2
+    plutainer_explain_retired_game "$GAME_NAME" ||
+      echo "[ERROR] Unknown PLUTAINER_GAME value: '${GAME_NAME}'." >&2
     return 1
   }
 
@@ -398,6 +415,8 @@ detect_legacy_env_vars() {
 #   - Marker absent + v1 layout dirs present: set V1_VOLUME_DETECTED=true,
 #     return 1. No print.
 #   - Marker absent + no v1 dirs: fresh volume — initialise as v2, return 0.
+#   - Volume not writable by the container (either marker case): explain the
+#     ownership fix, return 1.
 check_volume_version() {
   V1_VOLUME_DETECTED=false
   local marker="$PLUTAINER_APP_DIR/.plutainer-version"
@@ -410,8 +429,8 @@ check_volume_version() {
       echo "[ERROR] You appear to be running an older image against a newer volume, or vice-versa." >&2
       return 1
     fi
-    mkdir -p "$PLUTAINER_CONFIGS_DIR" "$PLUTAINER_APP_DIR/logs" "$PLUTAINER_RUNTIME_DIR"
-    return 0
+    ensure_volume_dirs
+    return
   fi
 
   # Marker missing. Distinguish v1 volume vs fresh volume.
@@ -421,9 +440,34 @@ check_volume_version() {
   fi
 
   # Fresh volume — initialise v2.
-  mkdir -p "$PLUTAINER_CONFIGS_DIR" "$PLUTAINER_APP_DIR/logs" "$PLUTAINER_RUNTIME_DIR"
-  echo "$PLUTAINER_VOLUME_VERSION" > "$marker"
+  ensure_volume_dirs || return 1
+  if ! { echo "$PLUTAINER_VOLUME_VERSION" > "$marker"; } 2>/dev/null; then
+    explain_unwritable_volume
+    return 1
+  fi
   echo "[INFO] Initialised fresh v2 volume at $PLUTAINER_APP_DIR"
+}
+
+# Create the v2 top-level dirs, or explain why the volume is not writable.
+# Callers run check_volume_version as `... || hold`, which suspends `set -e`
+# inside it, so a failed mkdir was printed and then ignored, and the volume
+# was announced as initialised anyway.
+ensure_volume_dirs() {
+  if mkdir -p "$PLUTAINER_CONFIGS_DIR" "$PLUTAINER_APP_DIR/logs" "$PLUTAINER_RUNTIME_DIR" 2>/dev/null \
+    && [[ -w "$PLUTAINER_CONFIGS_DIR" && -w "$PLUTAINER_RUNTIME_DIR" ]]; then
+    return 0
+  fi
+  explain_unwritable_volume
+  return 1
+}
+
+explain_unwritable_volume() {
+  local owner
+  owner="$(stat -c '%u:%g' "$PLUTAINER_APP_DIR" 2>/dev/null || echo unknown)"
+  echo "[ERROR] The app volume at $PLUTAINER_APP_DIR is not writable by this container." >&2
+  echo "[ERROR] The server runs as uid:gid $(id -u):$(id -g); the mounted directory is owned by $owner." >&2
+  echo "[ERROR] Give it to the container's user on the host, then restart:" >&2
+  echo "[ERROR]   sudo chown -R $(id -u):$(id -g) <host directory mounted at $PLUTAINER_APP_DIR>" >&2
 }
 
 # Combined v1-deployment refusal block. Adapts to what was detected.
@@ -493,7 +537,7 @@ PATH B — Migrate to v2 (recommended)
        IW4X_AUTO_UPDATE    → PLUTAINER_AUTO_UPDATE
        IW4X_SERVER_NAME    → PLUTAINER_SERVER_NAME
        IW4X_EXTRA_ARGS     → PLUTAINER_EXTRA_ARGS
-       ALTER_GAME          → PLUTAINER_GAME (e.g. t7x)
+       ALTER_GAME          → PLUTAINER_GAME (now boiii)
        ALTER_CONFIG_FILE   → PLUTAINER_CONFIG_FILE
        ALTER_PORT          → PLUTAINER_PORT
        ALTER_HEALTHCHECK   → PLUTAINER_HEALTHCHECK

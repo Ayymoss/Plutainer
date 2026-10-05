@@ -16,7 +16,13 @@ nothing here consumed it, and the RCON `status` text it parsed is printed
 verbatim by rcon-cli anyway.
 """
 
+import os
 import socket
+import time
+
+
+class ResponseTimeout(Exception):
+    """No reply arrived in time."""
 
 
 class Quake3Server(object):
@@ -29,6 +35,15 @@ class Quake3Server(object):
     # Every other engine here answers with the prefix at offset 0. Scan a short
     # window rather than demanding offset 0, so one parser covers both.
     prefix_search_window = 8
+
+    # IW5 silently drops an rcon command that arrives too soon after the
+    # previous one: measured from loopback, 0.2s later is dropped and 0.5s
+    # later is answered. Back-to-back rcon-cli calls land inside that window.
+    # The old retry loop hid it by resending; a command is sent once now (see
+    # rcon), so consecutive commands are spaced out instead. The last send
+    # time is kept per port in /tmp, which every rcon-cli call in the
+    # container shares.
+    min_rcon_gap = 1.0
 
     def __init__(self, server, rcon_password=''):
         try:
@@ -64,13 +79,39 @@ class Quake3Server(object):
             if data:
                 return self.parse_packet(data)
             retries -= 1
-        raise Exception('Server response timed out')
+        raise ResponseTimeout('Server response timed out')
 
-    def rcon(self, cmd):
-        r_cmd = self.command('rcon "%s" %s' % (self.rcon_password, cmd))
+    def rcon(self, cmd, timeout=10):
+        # Sent once, never retried. Unlike a query, a command is not
+        # idempotent, and a slow reply is not a lost one: `map_rotate` blocks
+        # the server while the next map loads, so the 1s retry loop used for
+        # queries resent it and the rotation skipped maps. Loopback UDP does
+        # not drop packets, so waiting longer costs nothing a retry would buy.
+        self.wait_for_rcon_gap()
+        try:
+            r_cmd = self.command('rcon "%s" %s' % (self.rcon_password, cmd),
+                                 timeout=timeout, retries=1)
+        except ResponseTimeout:
+            raise ResponseTimeout('No reply within %ds. The command was sent '
+                                  'once and may still have run.' % timeout)
         if r_cmd[1] in ('No rconpassword set on the server.\n', 'Bad rconpassword.\n'):
             raise Exception(r_cmd[1][:-1])
         return r_cmd
+
+    def wait_for_rcon_gap(self):
+        stamp = '/tmp/plutainer-rcon-%d.last' % self.port
+        try:
+            wait = self.min_rcon_gap - (time.time() - os.path.getmtime(stamp))
+            if wait > 0:
+                time.sleep(wait)
+        except OSError:
+            pass
+        try:
+            with open(stamp, 'a'):
+                pass
+            os.utime(stamp)
+        except OSError:
+            pass
 
     def parse_packet(self, data):
         """Split a reply into (response type, payload), both decoded."""
@@ -80,16 +121,36 @@ class Quake3Server(object):
 
         body = data[prefix_at + len(self.packet_prefix):]
 
-        # Not every reply carries a payload: t5's zombies build answers an
-        # unexpected connectionless packet with a bare b'disconnect' and no
-        # newline. Treat that as "type, empty body" so callers see an empty
+        # The response type is the first whitespace-delimited token, and the
+        # separator is framing rather than payload. Which whitespace it is
+        # varies by reply, so splitting on one of them only eats content:
+        #
+        #   statusResponse\n\key\value...   query replies use a newline
+        #   print <text>                    rcon replies use a space, and the
+        #                                   first line of the answer sits on
+        #                                   that same line
+        #
+        # Splitting on '\n' alone therefore dropped the first line of every
+        # rcon reply. `status` merely lost a banner, but a dvar query lost the
+        # value line - the whole answer - and `Unknown command "..."` came back
+        # as nothing at all, so a mistyped command was indistinguishable from a
+        # server that had stopped answering.
+        #
+        # Not every reply carries a payload either: t5's zombies build answers
+        # an unexpected connectionless packet with a bare b'disconnect' and no
+        # separator. Treat that as "type, empty body" so callers see an empty
         # result rather than a parse error.
-        first_line_end = body.find(b'\n')
-        if first_line_end == -1:
+        separator = -1
+        for index, char in enumerate(body):
+            if char in b' \t\r\n':
+                separator = index
+                break
+
+        if separator == -1:
             return body.decode('utf-8', 'ignore'), ''
 
-        return (body[:first_line_end].decode('utf-8', 'ignore'),
-                body[first_line_end + 1:].decode('utf-8', 'ignore'))
+        return (body[:separator].decode('utf-8', 'ignore'),
+                body[separator + 1:].decode('utf-8', 'ignore'))
 
     def parse_status(self, data):
         """Parse a `\\key\\value\\key\\value` serverinfo string into a dict.

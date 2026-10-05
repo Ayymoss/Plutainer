@@ -99,7 +99,7 @@ Anything not listed in this table keeps its old name (notably `PLUTO_SERVER_KEY`
 | `IW4X_AUTO_UPDATE`   | `PLUTAINER_AUTO_UPDATE`            |
 | `IW4X_SERVER_NAME`   | `PLUTAINER_SERVER_NAME`            |
 | `IW4X_EXTRA_ARGS`    | `PLUTAINER_EXTRA_ARGS`             |
-| `ALTER_GAME`         | `PLUTAINER_GAME` (e.g. `t7x`)      |
+| `ALTER_GAME`         | `PLUTAINER_GAME` (now `boiii`)     |
 | `ALTER_CONFIG_FILE`  | `PLUTAINER_CONFIG_FILE`            |
 | `ALTER_PORT`         | `PLUTAINER_PORT`                   |
 | `ALTER_HEALTHCHECK`  | `PLUTAINER_HEALTHCHECK`            |
@@ -122,7 +122,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-You should see a fresh boot ending in `Starting Plutonium <game> Server: ...` (or the equivalent for IW4x/Alterware) followed by the game process. Healthcheck flips to `healthy` once RCON responds.
+You should see a fresh boot ending in `Starting Plutonium <game> Server: ...` (or the equivalent for IW4x, BOIII and CoD4x) followed by the game process. Healthcheck flips to `healthy` once RCON responds.
 
 ---
 

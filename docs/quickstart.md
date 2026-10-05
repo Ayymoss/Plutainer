@@ -11,7 +11,7 @@ You need three things:
 3. **A server key or token**, depending on the game:
    - **T4, T5, T6, IW5** need a Plutonium server key, free from <https://platform.plutonium.pw/serverkeys>. The server will not start without one.
    - **CoD4x** needs a masterserver token from <http://cod4master.cod4x.ovh> to be listed in the server browser. It runs without one, but nobody will find it.
-   - **IW4x, T7x, Nebula and the SteamCMD games** need no key or token. Nebula's
+   - **IW4x, BOIII, Nebula and the SteamCMD games** need no key or token. Nebula's
      headless Steam API compatibility layer is built into the image; do not put
      Steam credentials in the container.
 
