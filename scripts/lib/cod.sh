@@ -663,14 +663,15 @@ cod_launch_iw4x() {
 
 BOIII_BINARY_URL="https://github.com/Ezz-lol/boiii-free/releases/latest/download/boiii.exe"
 
-# BOIII keeps its data/ set, plugins and minidumps under %LOCALAPPDATA%oiii.
+# BOIII keeps its data/ set, plugins and minidumps under %LOCALAPPDATA%\boiii.
 # The Wine prefix lives in the image layer, so that directory is linked into the
 # volume: anything written there would otherwise vanish on every recreate.
 BOIII_APPDATA_DIR="$PLUTAINER_RUNTIME_DIR/boiii"
 BOIII_WINE_APPDATA="$HOME/.wine/drive_c/users/$(id -un)/AppData/Local/boiii"
 
 cod_stage_boiii() {
-  link_files "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR"     codlogo.bmp machinecfg steam_api64.dll steamclient64.dll tier0_s64.dll vstdlib_s64.dll
+  link_files "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" \
+    codlogo.bmp machinecfg steam_api64.dll steamclient64.dll tier0_s64.dll vstdlib_s64.dll
 
   # BOIII decides it is a dedicated server by checking which executables exist:
   #   is_server = has_flag("dedicated") || (!has_client && has_server)
@@ -716,21 +717,25 @@ cod_update_boiii() {
   # this replaces boiii.exe, so a hand-built binary in the volume needs
   # PLUTAINER_AUTO_UPDATE=false to survive a restart.
   if [[ ! -f "$exe" || "${PLUTAINER_AUTO_UPDATE:-}" != "false" ]]; then
-    wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" "$BOIII_BINARY_URL"       || echo "[WARN] Could not download boiii.exe from $BOIII_BINARY_URL" >&2
+    wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" "$BOIII_BINARY_URL" \
+      || echo "[WARN] Could not download boiii.exe from $BOIII_BINARY_URL" >&2
   fi
 
   # The data/ set is not optional for a server, see sync-boiii-data.py. Only
   # the client updater fetches it, and a dedicated server never runs that.
-  python3 "$PLUTAINER_ROOT/sync-boiii-data.py" "$BOIII_APPDATA_DIR"     || echo "[WARN] Could not sync BOIII's data files." >&2
+  python3 "$PLUTAINER_ROOT/sync-boiii-data.py" "$BOIII_APPDATA_DIR" \
+    || echo "[WARN] Could not sync BOIII's data files." >&2
 }
 
 cod_validate_boiii() {
-  [[ -f "$PLUTAINER_GAMEFILES_DIR/boiii.exe" ]]     || hold_indefinitely "boiii.exe is missing from $PLUTAINER_GAMEFILES_DIR and could not be downloaded from $BOIII_BINARY_URL."
+  [[ -f "$PLUTAINER_GAMEFILES_DIR/boiii.exe" ]] \
+    || hold_indefinitely "boiii.exe is missing from $PLUTAINER_GAMEFILES_DIR and could not be downloaded from $BOIII_BINARY_URL."
 
   # BOIII refuses to start without its launcher page, even as a server, and
   # blames the network when it does. Without the rest of data/ it would start
   # and then report every dvar as a hash, so no map would ever be visible.
-  [[ -f "$BOIII_APPDATA_DIR/data/launcher/main.html" ]]     || hold_indefinitely "BOIII's data files are missing from $BOIII_APPDATA_DIR/data and could not be
+  [[ -f "$BOIII_APPDATA_DIR/data/launcher/main.html" ]] \
+    || hold_indefinitely "BOIII's data files are missing from $BOIII_APPDATA_DIR/data and could not be
 downloaded. A dedicated server needs them as much as a client does.
 
 Check that this container can reach r2.ezz.lol, then restart it."
