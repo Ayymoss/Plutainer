@@ -2,9 +2,9 @@ upstream:   https://github.com/Dss0/t7-server-config
 branch:     main
 commit:     f1547ae09851aa48ac71c338a78493eb88c85d49
 tree:       https://github.com/Dss0/t7-server-config/tree/f1547ae09851aa48ac71c338a78493eb88c85d49
-subpaths:   zone:zone
+subpaths:   zone:zone,t7x/lobby_scripts:boiii/lobby_scripts
 license:    none declared
-fetched:    2026-10-03T23:22:46Z
+fetched:    2026-10-05T13:38:01Z
 fetched-by: tools/refresh-seeds.sh
 
 Vendored copy. Do not hand-edit: run tools/refresh-seeds.sh boiii instead,

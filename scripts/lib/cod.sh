@@ -777,24 +777,17 @@ cod_launch_boiii() {
     +set logfile "2"
   )
 
-  # An MP config carried over from T7x execs only its gametype file, which on
-  # T7x came from the seed's own disk copy and chained the MP defaults. BOIII
-  # serves the stock fastfile copy, which does not, so every gametype setting
-  # stays unset and players spawn with fists. The seed now execs the defaults
-  # itself; this covers configs written before that, without editing them.
-  if grep -qE '^[[:space:]]*exec[[:space:]]+"?gamedata/gamesettings/mp/' "$CONFIG_PATH" \
-    && ! grep -qE '^[[:space:]]*exec[[:space:]]+"?gamedata/gamesettings/mp/gamesettings_default\.cfg' "$CONFIG_PATH"; then
-    echo "[INFO] $CONFIG_FILE does not exec the MP gametype defaults; running them first." \
-      "Add the lines from the seeded server.cfg to stop this message."
-    COD_LAUNCH_CMD+=(
-      +exec "gamedata/gamesettings/mp/gamesettings_default.cfg"
-      +exec "gamedata/configs/common/default_xboxlive.cfg"
-    )
-  fi
-
   COD_LAUNCH_CMD+=(+exec "$CONFIG_FILE")
   cod_append_extra_args
-  cod_append_map_rotate +map_rotate
+
+  # No +map_rotate, deliberately, and PLUTAINER_MAP_ROTATE does not apply. The
+  # first map is loaded by the seeded lobby script
+  # (boiii/lobby_scripts/server_lobby_selector): it hosts the lobby that
+  # sv_lobby_mode names and, with sv_skip_lobby 1, launches the first entry of
+  # sv_maprotation. A map_rotate at launch fires before that lobby exists, so
+  # the engine is still in multiplayer mode: a zm_ map then loads mp_common and
+  # dies on perklistitemfactory.lua. T7x does exactly the same, which is why
+  # it was never given the argument.
 }
 
 # --- CoD4x -----------------------------------------------------------------

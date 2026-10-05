@@ -30,14 +30,18 @@ SEED_ROOT="$REPO_ROOT/seed-configs"
 # src-subpath is relative to the archive root and its *contents* are copied to
 # seed-configs/<game>/<dest-subdir>. Omit dest-subdir to land at the game root.
 # The layouts differ per repo because each community author picked their own.
-# Only the subpaths Plutainer actually uses are vendored: the Dss0 bundle also
-# carries a t7x/ tree, which belongs to a different Black Ops III client.
+# Only the subpaths Plutainer actually uses are vendored. The Dss0 bundle's t7x/
+# tree is another client's data directory, but its lobby script is not optional:
+# sv_lobby_mode and sv_skip_lobby are read by that Lua, not by any engine, so
+# without it a zombies config hosts a multiplayer lobby and never loads a map.
+# BOIII loads server lobby scripts from <game>/boiii/lobby_scripts/, so the
+# script moves there and the rest of t7x/ is left behind.
 SEEDS=(
   "t4|xerxes-at/T4ServerConfigs|main|main"
   "t5|xerxes-at/T5ServerConfig|master|localappdata/Plutonium/storage/t5"
   "t6|xerxes-at/T6ServerConfigs|master|localappdata/Plutonium/storage/t6"
   "iw5|xerxes-at/IW5ServerConfig|master|admin"
-  "boiii|Dss0/t7-server-config|main|zone:zone"
+  "boiii|Dss0/t7-server-config|main|zone:zone,t7x/lobby_scripts:boiii/lobby_scripts"
   "iw4x|iw4x/iw4-server-configs|main|userraw:userraw"
 )
 
