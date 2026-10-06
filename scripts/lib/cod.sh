@@ -374,6 +374,8 @@ cod_resolve_admin_endpoint() {
 #   COD_SEED_ASSET_ROOT   where non-cfg seed files land
 #   COD_SEED_CFG_ROOT     subdir within the bundle whose top-level *.cfg lift
 #   COD_LABEL             name used in log lines
+#   COD_BETA              1 when the client publishes a beta channel that
+#                         PLUTAINER_GAME_BETA=true can select, empty otherwise
 #
 # ENGINE_CONFIG_DIR and MOD_CONFIG_DIR are set here too, since they are per-game
 # facts rather than logic.
@@ -396,6 +398,7 @@ cod_resolve_game() {
   COD_SEED_KEY=""
   COD_SEED_ASSET_ROOT=""
   COD_SEED_CFG_ROOT=""
+  COD_BETA=""
 
   case "$game" in
     t4mp|t4sp)
@@ -427,6 +430,7 @@ cod_resolve_game() {
       COD_LABEL="IW4x (Modern Warfare 2)"
       COD_SEED_KEY="iw4x"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
       COD_SEED_CFG_ROOT="userraw"
+      COD_BETA=1
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/userraw"
       ;;
     boiii)
@@ -434,6 +438,7 @@ cod_resolve_game() {
       COD_LABEL="Ezz BOIII (Black Ops III)"
       COD_SEED_KEY="boiii"; COD_SEED_ASSET_ROOT="$PLUTAINER_GAMEFILES_DIR"
       COD_SEED_CFG_ROOT="zone"
+      COD_BETA=1
       ENGINE_CONFIG_DIR="$PLUTAINER_GAMEFILES_DIR/zone"
       ;;
     cod4x)
@@ -630,6 +635,7 @@ cod_update_iw4x() {
   local marker="$PLUTAINER_GAMEFILES_DIR/cache/iw4x.db"
   if [[ -f "$marker" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
     echo "Skipping iw4x update because PLUTAINER_AUTO_UPDATE is set to 'false'."
+    plutainer_warn_beta_skipped
     return 0
   fi
   if [[ -f "$marker" ]]; then
@@ -638,9 +644,12 @@ cod_update_iw4x() {
     echo "First container run detected. Downloading iw4x initial files..."
   fi
 
+  local -a args=(--skip-launch --no-self-update)
+  plutainer_beta_requested && args+=(--prerelease)
+
   # Don't let a GitHub/CDN outage take a working server down: only a first-run
   # failure (no iw4x.exe yet) is fatal.
-  if ! "$launcher" --skip-launch --no-self-update; then
+  if ! "$launcher" "${args[@]}"; then
     if [[ -f "$PLUTAINER_GAMEFILES_DIR/iw4x.exe" ]]; then
       echo "[WARN] iw4x-launcher failed — starting with the existing install." >&2
     else
@@ -668,8 +677,6 @@ cod_launch_iw4x() {
 }
 
 # --- Ezz BOIII (Black Ops III) ----------------------------------------------
-
-BOIII_BINARY_URL="https://github.com/Ezz-lol/boiii-free/releases/latest/download/boiii.exe"
 
 # BOIII keeps its data/ set, plugins and minidumps under %LOCALAPPDATA%\boiii.
 # The Wine prefix lives in the image layer, so that directory is linked into the
@@ -713,6 +720,7 @@ cod_update_boiii() {
   local ui="$BOIII_APPDATA_DIR/data/launcher/main.html"
   if [[ -f "$exe" && -f "$ui" && "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
     echo "Skipping BOIII update because PLUTAINER_AUTO_UPDATE is set to 'false'."
+    plutainer_warn_beta_skipped
     return 0
   fi
   if [[ -f "$exe" ]]; then
@@ -721,23 +729,27 @@ cod_update_boiii() {
     echo "First container run detected. Downloading BOIII... This may take a moment."
   fi
 
-  # wget -N is timestamping: it only downloads when upstream is newer. Note that
-  # this replaces boiii.exe, so a hand-built binary in the volume needs
-  # PLUTAINER_AUTO_UPDATE=false to survive a restart.
+  # boiii.exe and data/ both come from BOIII's own update manifest for the
+  # channel, matched on sha1 (see sync-boiii.py for why not a timestamp). The
+  # data/ set is not optional for a server: only the client updater fetches it,
+  # and a dedicated server never runs that. Note that this replaces boiii.exe,
+  # so a hand-built binary in the volume needs PLUTAINER_AUTO_UPDATE=false to
+  # survive a restart.
+  local -a args=("$BOIII_APPDATA_DIR" --channel "$(cod_boiii_channel)")
   if [[ ! -f "$exe" || "${PLUTAINER_AUTO_UPDATE:-}" != "false" ]]; then
-    wget -q -N -P "$PLUTAINER_GAMEFILES_DIR" "$BOIII_BINARY_URL" \
-      || echo "[WARN] Could not download boiii.exe from $BOIII_BINARY_URL" >&2
+    args+=(--exe-dir "$PLUTAINER_GAMEFILES_DIR")
   fi
+  python3 "$PLUTAINER_ROOT/sync-boiii.py" "${args[@]}" \
+    || echo "[WARN] Could not update BOIII from r2.ezz.lol." >&2
+}
 
-  # The data/ set is not optional for a server, see sync-boiii-data.py. Only
-  # the client updater fetches it, and a dedicated server never runs that.
-  python3 "$PLUTAINER_ROOT/sync-boiii-data.py" "$BOIII_APPDATA_DIR" \
-    || echo "[WARN] Could not sync BOIII's data files." >&2
+cod_boiii_channel() {
+  if plutainer_beta_requested; then echo beta; else echo stable; fi
 }
 
 cod_validate_boiii() {
   [[ -f "$PLUTAINER_GAMEFILES_DIR/boiii.exe" ]] \
-    || hold_indefinitely "boiii.exe is missing from $PLUTAINER_GAMEFILES_DIR and could not be downloaded from $BOIII_BINARY_URL."
+    || hold_indefinitely "boiii.exe is missing from $PLUTAINER_GAMEFILES_DIR and could not be downloaded from r2.ezz.lol."
 
   # BOIII refuses to start without its launcher page, even as a server, and
   # blames the network when it does. Without the rest of data/ it would start
@@ -775,7 +787,13 @@ cod_launch_boiii() {
   # BOIII ships its own updater, which is separate from the download above and
   # runs inside the game. PLUTAINER_AUTO_UPDATE=false turns off both halves
   # rather than only the one Plutainer controls.
-  if [[ "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]]; then
+  #
+  # On the beta channel it is always off. That updater follows the stable
+  # manifest unless BOIII's own -beta flag is passed, so it would replace the
+  # beta exe with the stable one. And -beta is not usable here: it downloads
+  # versions/boiii-beta.exe, starts it in a new console and exits, which ends
+  # launch_game while the real server carries on orphaned.
+  if [[ "${PLUTAINER_AUTO_UPDATE:-}" == "false" ]] || plutainer_beta_requested; then
     COD_LAUNCH_CMD+=(-noupdate)
   fi
 

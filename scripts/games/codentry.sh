@@ -43,6 +43,11 @@ echo "[INFO] ${COD_LABEL} — ${GAME_NAME}"
 echo "[INFO]   gamefiles : $PLUTAINER_GAMEFILES_DIR"
 echo "[INFO]   config    : $CONFIG_PATH"
 echo "[INFO]   port      : $ACTIVE_PORT"
+if [[ -z "$COD_BETA" ]]; then
+  plutainer_refuse_beta "Of the Call of Duty games, only iw4x and boiii publish beta builds."
+elif plutainer_beta_requested; then
+  echo "[INFO]   channel   : beta"
+fi
 
 mkdir -p "$PLUTAINER_GAMEFILES_DIR" "$PLUTAINER_CONFIGS_DIR" "$PLUTAINER_APP_DIR/logs"
 

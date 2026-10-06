@@ -7,6 +7,7 @@ source "$PLUTAINER_ROOT/lib/core.sh"
 
 detect_game_type     || hold_indefinitely "Could not detect the configured game."
 check_volume_version || hold_indefinitely "check_volume_version failed."
+plutainer_refuse_beta "Pin a Nebula release with PLUTAINER_NEBULA_VERSION instead."
 nebula_resolve_game  || hold_indefinitely "Unknown Nebula game '${GAME_NAME}'."
 resolve_active_port  || hold_indefinitely "Could not resolve the server port."
 nebula_validate_source || hold_indefinitely "Dyson Sphere Program game files are missing."

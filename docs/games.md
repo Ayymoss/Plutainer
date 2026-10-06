@@ -139,7 +139,9 @@ T5 also only answers status queries from localhost, so external query tools see 
 
 Black Ops III is served by **Ezz BOIII**. If you ran `t7x` before, set `PLUTAINER_GAME=boiii` and change nothing else: the gamefiles mount, `app/configs/` and the `zone/` config directory are the same. A `t7x` tag now refuses to start and says so.
 
-Plutainer downloads the latest `boiii.exe` from [Ezz-lol/boiii-free releases](https://github.com/Ezz-lol/boiii-free/releases), and BOIII's own data files (scripts, Lua, game settings, dvar name tables) from its update server into `app/runtime/boiii/data/`. A BOIII client fetches those itself; a dedicated server never does, and without them it refuses to start, or starts and reports every server setting as a number instead of a name.
+Plutainer downloads `boiii.exe` and BOIII's own data files (scripts, Lua, game settings, dvar name tables) from BOIII's update server, the same one its in-game updater uses. The exe is the one [Ezz-lol/boiii-free releases](https://github.com/Ezz-lol/boiii-free/releases) publishes, byte for byte. The data files go into `app/runtime/boiii/data/`. A BOIII client fetches those itself; a dedicated server never does, and without them it refuses to start, or starts and reports every server setting as a number instead of a name.
+
+`PLUTAINER_GAME_BETA=true` switches both to BOIII's beta channel, see [Beta builds](#beta-builds).
 
 Multiplayer and zombies only, so no campaign config is seeded.
 
@@ -165,6 +167,8 @@ It also gets `-quiet-crash`, so a crash cannot stop on a dialog nobody can dismi
 
 **`PLUTAINER_AUTO_UPDATE=false` means more here than for the other games.** BOIII ships its own in-game updater alongside the binary Plutainer downloads. Setting the variable to `false` turns off both: Plutainer stops re-fetching `boiii.exe` and the data files, and `-noupdate` stops the in-game updater. That is the setting to use if you have put a build of your own in `app/runtime/gamefiles/boiii.exe` — without it, the next start replaces it.
 
+Don't put anything of your own in `app/runtime/boiii/` outside `user/`. Plutainer keeps `data/` identical to the update server's file list, and BOIII's own updater deletes anything else it finds there.
+
 ### CoD4x (Modern Warfare)
 
 Multiplayer only. This is the one family that does **not** run under Wine: upstream ships a native Linux server, and Plutainer runs it directly.
@@ -189,9 +193,28 @@ Get a token from <http://cod4master.cod4x.ovh> and pass it as `PLUTAINER_COD4X_A
 
 ### IW4x (Modern Warfare 2)
 
+`PLUTAINER_GAME_BETA=true` passes `--prerelease` to the launcher, see [Beta builds](#beta-builds).
+
 Four seeded configs: `server.cfg` is the normal dedicated one, the `partyserver*` pair run lobby mode from playlists, and the `*lan` variants are LAN mode.
 
 Upstream ships `sv_maprotation` commented out, which would leave `+map_rotate` with nothing to load, so Plutainer's copy of `server.cfg` carries a stock-MW2 rotation under an `// Added by Plutainer` comment. Edit it freely, or set `PLUTAINER_MAP_ROTATE=false` and drive maps from a playlist.
+
+## Beta builds
+
+`PLUTAINER_GAME_BETA=true` runs the game client's beta builds instead of its stable release. It means the game's beta, not a beta of Plutainer. Two clients publish one:
+
+| Game | What changes |
+| --- | --- |
+| `boiii` | `boiii.exe` and the data files come from BOIII's beta channel (`r2.ezz.lol/boiii-beta.json`), which upstream builds from its beta branch whenever it wants testers. The in-game updater is turned off with `-noupdate`, because it follows the stable channel and would put the stable exe back |
+| `iw4x` | The launcher runs with `--prerelease`. When IW4x has no pre-release out, which is usual, this installs the same files as stable |
+
+Any other game refuses to start with it set, rather than quietly running stable while you think you are testing a beta. For the SteamCMD games, name the branch in `PLUTAINER_STEAM_BETA` instead (e.g. `latest_experimental`).
+
+To go back, remove the variable and restart. On BOIII, `boiii.exe` and the data files are matched against the stable list by hash, so the beta's files are replaced or removed even though they are newer.
+
+It does nothing with `PLUTAINER_AUTO_UPDATE=false`, which keeps whatever build is already in the volume. Plutainer prints a warning if you set both.
+
+Don't pass BOIII's own `-beta` flag through `PLUTAINER_EXTRA_ARGS`. It downloads a second exe, starts it in a new window and exits, so the container sees the server stop while the real one keeps running out of its reach.
 
 ## Architecture support
 

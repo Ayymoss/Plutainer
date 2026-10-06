@@ -247,6 +247,36 @@ plutainer_require_hooks() {
   return 1
 }
 
+# --- Beta channels ----------------------------------------------------------
+#
+# PLUTAINER_GAME_BETA=true asks for the game client's pre-release builds (the
+# game's, not Plutainer's). Only clients that publish such a channel honour it.
+# Everywhere else it refuses to start: running stable while the user believes
+# they are testing a beta would send them reporting the wrong build's bugs
+# upstream.
+plutainer_beta_requested() {
+  case "${PLUTAINER_GAME_BETA:-false}" in
+    true)     return 0 ;;
+    false|"") return 1 ;;
+    *) hold_indefinitely "PLUTAINER_GAME_BETA must be 'true' or 'false', not '${PLUTAINER_GAME_BETA}'." ;;
+  esac
+}
+
+# With updates off nothing is fetched, so the channel cannot change either: a
+# volume holding a stable build keeps running it. Say so, rather than leave the
+# "channel: beta" line to claim otherwise.
+plutainer_warn_beta_skipped() {
+  plutainer_beta_requested || return 0
+  echo "[WARN] PLUTAINER_GAME_BETA=true has no effect while PLUTAINER_AUTO_UPDATE=false: the build already in the volume is used, whichever channel it came from." >&2
+}
+
+# Args: <what to do instead>
+plutainer_refuse_beta() {
+  plutainer_beta_requested || return 0
+  hold_indefinitely "PLUTAINER_GAME_BETA=true, but ${GAME_NAME} has no beta channel for Plutainer to select.
+  $1"
+}
+
 # A tag that used to work is not the same as one that never did, and the
 # difference is the whole message: "unknown" sends someone hunting for a typo.
 # Returns 0 when it recognised and explained the tag.
