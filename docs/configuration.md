@@ -22,6 +22,7 @@ Plutonium games (`t4*`, `t5*`, `t6*`, `iw5mp`) also require `PLUTO_SERVER_KEY`.
 | `PLUTAINER_MAP_ROTATE` | `false` drops the automatic `+map_rotate` (`+start_map_rotate` on IW5), leaving map choice to your cfg or playlist. BOIII never gets it, see [games.md](games.md#boiii-black-ops-iii) | `true` |
 | `PLUTAINER_EXTRA_ARGS` | Extra arguments appended to the launch command | unset |
 | `PLUTAINER_AUTO_UPDATE` | `false` skips update checks at startup | `true` |
+| `PLUTAINER_GAME_BETA` | `true` installs the game client's beta builds instead of its stable release. This is the game's beta, not Plutainer's. BOIII and IW4x only; any other game refuses to start with it set. SteamCMD games take a branch name in `PLUTAINER_STEAM_BETA` instead. See [games.md](games.md#beta-builds) | `false` |
 | `PLUTAINER_HEALTHCHECK` | `false` disables the healthcheck | `true` |
 | `PLUTAINER_SKIP_SEED` | `true` skips seeding default configs | `false` |
 | `PLUTAINER_USE_RAW_CONFIGS` | `true` puts cfg files directly at the engine path instead of `app/configs/` — see [Volumes & configs](volumes-and-configs.md#raw-configs-mode) | `false` |

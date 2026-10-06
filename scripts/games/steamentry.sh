@@ -24,6 +24,7 @@ source "$PLUTAINER_ROOT/lib/core.sh"
 
 detect_game_type     || hold_indefinitely "Could not detect the configured game."
 check_volume_version || hold_indefinitely "check_volume_version failed."
+plutainer_refuse_beta "Steam branches are named per game, so set PLUTAINER_STEAM_BETA to the branch instead, e.g. latest_experimental."
 
 # Capability check, not an architecture check — the same pattern the iw4x and
 # cod4x hooks use. If a future image ships SteamCMD for another architecture,
