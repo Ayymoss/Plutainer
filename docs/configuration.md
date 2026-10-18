@@ -53,9 +53,12 @@ These only apply to one engine family.
 | `PLUTAINER_STEAM_VALIDATE` | `true` adds `validate` to the SteamCMD update, re-checking every file. Slow; use after a corrupted install | SteamCMD games |
 | `PLUTAINER_STEAM_ATTEMPTS` | How many times to retry a failed SteamCMD install. Its first contact in a fresh container is unreliable, so more than one is the norm | SteamCMD games (default `3`) |
 | `PLUTAINER_STEAM_APP_ID` | Override the Steam app ID. Escape hatch for testing; the built-in value is normally right | SteamCMD games |
-| `PLUTAINER_MAX_CLIENTS` | Player slots | Source games |
-| `PLUTAINER_START_MAP` | Map to boot into | Source games |
-| `PLUTAINER_CS2_GSLT` | Game Server Login Token, from <https://steamcommunity.com/dev/managegameservers>. Without it the server runs but never appears in the browser | CS2 |
+| `PLUTAINER_MAX_CLIENTS` | Player slots | Source games, Sandstorm |
+| `PLUTAINER_START_MAP` | Map to boot into. On Sandstorm, a travel URL such as `Oilfield?Scenario=Scenario_Refinery_Checkpoint_Security` | Source games, Sandstorm |
+| `PLUTAINER_STEAM_GSLT` | Game Server Login Token, from <https://steamcommunity.com/dev/managegameservers>. Without it the server runs but never appears in the browser | CS2, Sandstorm |
+| `PLUTAINER_CS2_GSLT` | Older name for `PLUTAINER_STEAM_GSLT`, still read | CS2 |
+| `PLUTAINER_QUERY_PORT` | Status query (A2S) port, for a game that answers queries on a port of its own. Ignored, with a warning, by games that answer on the game port | Sandstorm (default `27131`) |
+| `PLUTAINER_SANDSTORM_MODE` | Game mode appended to the boot map as `?Game=`, e.g. `Checkpoint`, `CheckpointHardcore`, `Push`, `Firefight` | Sandstorm |
 | `PLUTAINER_CS2_GAME_ALIAS` | Game mode alias, e.g. `competitive`, `casual`, `deathmatch` (default `competitive`) | CS2 |
 | `PLUTAINER_CS2_LAN` | `1` restricts the server to LAN (default `0`) | CS2 |
 | `PLUTAINER_NEBULA_VERSION` | Nebula release: `latest` checks for the current stable release at every start; use an exact version such as `0.9.22` to pin it | Nebula (default `latest`) |
@@ -79,6 +82,7 @@ These only apply to one engine family.
 | cs2 | 27015 |
 | l4d2 | 27015 |
 | hl2dm | 27015 |
+| sandstorm | 27102, query 27131 |
 | nebula | 8469/TCP |
 
 CoD games use **UDP**. IW4x additionally wants TCP published if you host mods, for modlist metadata:
@@ -105,6 +109,15 @@ ports:
 ```
 
 Do not bind Telnet to a public interface. Set `SEVENDTD_TELNET_BIND` to a private LAN, VPN, or dedicated Docker bridge address and use that same address in the management client.
+
+Sandstorm uses two UDP ports, the game port and the query port, plus a TCP RCON port that should stay private — see [games.md](games.md#insurgency-sandstorm-sandstorm):
+
+```yaml
+ports:
+  - "27102:27102/udp"
+  - "27131:27131/udp"
+  - "127.0.0.1:27015:27015/tcp"   # RCON, host-side tools only
+```
 
 Nebula uses one TCP port:
 

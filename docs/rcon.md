@@ -9,9 +9,10 @@ Sending commands to a running server.
 | Plutonium, IW4x, BOIII, CoD4x | Quake3 RCON (UDP) | game port | `rcon_password` in your cfg |
 | Half-Life 2: Deathmatch | Source RCON (TCP) | game port | `rcon_password` in your cfg |
 | 7 Days to Die | Telnet console (TCP) | `TelnetPort`, default 8081 | `TelnetPassword` in `serverconfig.xml` |
+| Insurgency: Sandstorm | Source RCON (TCP) | `ListenPort` in `[Rcon]`, default 27015 | `Password` in `Game.ini`'s `[Rcon]` section |
 | Nebula | In-game `/server` chat commands | game port | `RemoteAccessPassword` in `nebula.cfg` |
 
-Setting `PLUTAINER_RCON_PASSWORD` fills in the right field for the game, whichever it is. On 7DTD it also switches `TelnetEnabled` on, since the console is off by default.
+Setting `PLUTAINER_RCON_PASSWORD` fills in the right field for the game, whichever it is. On 7DTD it also switches `TelnetEnabled` on, since the console is off by default, and on Sandstorm `bEnabled` in `[Rcon]` for the same reason.
 
 For Nebula, set `PLUTAINER_NEBULA_REMOTE_PASSWORD` instead. A connected client can then run `/server login <password>` followed by `/server save`, `/server load`, `/server list` or `/server info`. `rcon-cli` reports that Nebula has no protocol it can speak; it does not pretend chat commands are RCON.
 

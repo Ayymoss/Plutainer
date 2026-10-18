@@ -50,6 +50,12 @@ if (( STEAM_UDP_SPAN > 1 )); then
 else
   echo "[INFO]   port    : $ACTIVE_PORT"
 fi
+if [[ -n "$STEAM_DEFAULT_QUERY_PORT" ]]; then
+  resolve_query_port || hold_indefinitely "Could not resolve the query port."
+  echo "[INFO]   query   : $QUERY_PORT (UDP; the server browser and health check use this one)"
+elif [[ -n "${PLUTAINER_QUERY_PORT:-}" ]]; then
+  echo "[WARN] PLUTAINER_QUERY_PORT is ignored: ${GAME_NAME} answers queries on its game port." >&2
+fi
 
 mkdir -p "$PLUTAINER_CONFIGS_DIR" "$PLUTAINER_APP_DIR/logs" "$STEAM_DATA_DIR"
 

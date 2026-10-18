@@ -43,8 +43,10 @@ if [[ "${HEALTHCHECK_FLAG}" == "false" ]]; then
 fi
 
 # --- Step 3: Determine the correct port to check ---
-resolve_active_port || exit 1
-HEALTHCHECK_PORT="$ACTIVE_PORT"
+# The query port, which is the game port except where the family table gives a
+# game its own (see resolve_query_port in lib/core.sh).
+resolve_query_port || exit 1
+HEALTHCHECK_PORT="$QUERY_PORT"
 echo "[INFO] Server port: ${HEALTHCHECK_PORT}"
 
 

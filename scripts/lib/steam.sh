@@ -27,7 +27,7 @@ STEAM_CMD="/home/plutainer/.plutainer/steamcmd/steamcmd.sh"
 
 # Games this family serves. derive_family() consults this rather than carrying
 # its own copy, so adding a game means editing this file and nothing else.
-STEAM_GAMES=(7dtd hl2dm l4d2 cs2)
+STEAM_GAMES=(7dtd hl2dm l4d2 cs2 sandstorm)
 
 steam_is_known_game() {
   local candidate="$1" game
@@ -55,6 +55,12 @@ steam_is_known_game() {
 #                         each time. Empty (the normal case) means one plain
 #                         app_update. See the l4d2 row for why this exists.
 #   STEAM_DEFAULT_PORT    game port when PLUTAINER_PORT is unset
+#   STEAM_DEFAULT_QUERY_PORT
+#                         optional. Set only for a game that answers its status
+#                         query on a port of its own rather than the game port;
+#                         such a game also honours PLUTAINER_QUERY_PORT. Empty
+#                         means queries go to the game port. See
+#                         resolve_query_port in lib/core.sh.
 #   STEAM_UDP_SPAN        how many consecutive UDP ports the game occupies
 #   STEAM_CONFIG_FILE     default PLUTAINER_CONFIG_FILE
 #   STEAM_QUERY           a2s | tcp   — how healthcheck.sh probes it
@@ -71,6 +77,7 @@ steam_resolve_game() {
   STEAM_INSTALL_PLATFORMS=""
   STEAM_WORKDIR=""
   STEAM_ENGINE=""
+  STEAM_DEFAULT_QUERY_PORT=""
 
   case "$game" in
     7dtd)
@@ -140,6 +147,30 @@ steam_resolve_game() {
       STEAM_QUERY="a2s"
       STEAM_ADMIN="source-rcon"
       STEAM_DEFAULT_MAP="dm_lockdown"
+      ;;
+    sandstorm)
+      # Insurgency: Sandstorm, Unreal Engine 4. Native Linux server, anonymous
+      # SteamCMD install, Valve's RCON — so it belongs here — but it disagrees
+      # with srcds on where nearly everything lives:
+      #   - A2S is answered only on -QueryPort; the game port ignores it
+      #     (measured: query port replies, game port times out). Hence the
+      #     separate query port.
+      #   - RCON is its own TCP listener, configured in Game.ini's [Rcon]
+      #     section (bEnabled / Password / ListenPort), not on the game port.
+      #   - Configs are UE ini files under Insurgency/Saved/Config/LinuxServer/
+      #     plus MapCycle.txt / Admins.txt under Insurgency/Config/Server/.
+      #   - The boot map is a travel URL: map?Scenario=...[?Game=<mode>].
+      STEAM_ENGINE="unreal"
+      STEAM_APP_ID=581330
+      STEAM_SERVER_BINARY="Insurgency/Binaries/Linux/InsurgencyServer-Linux-Shipping"
+      STEAM_GAME_DIR="Insurgency"
+      STEAM_DEFAULT_PORT=27102
+      STEAM_DEFAULT_QUERY_PORT=27131
+      STEAM_UDP_SPAN=1
+      STEAM_CONFIG_FILE="Game.ini"
+      STEAM_QUERY="a2s"
+      STEAM_ADMIN="source-rcon"
+      STEAM_DEFAULT_MAP="Oilfield?Scenario=Scenario_Refinery_Checkpoint_Security"
       ;;
     *)
       echo "[ERROR] '${game}' is not a known SteamCMD game." >&2
@@ -296,17 +327,23 @@ steam_seed_config() {
 
 # Same, for a game whose depot ships no config at all. Falls back to the seed
 # bundle vendored in the image (seed-configs/<game>/), which is how the CoD
-# families get theirs.
+# families get theirs. With no arguments it seeds CONFIG_FILE; a game that keeps
+# more than one file in configs/ names them all. Each is copied only if absent.
+# Args: [name ...]
 steam_seed_config_from_image() {
-  local src="/home/plutainer/.plutainer/seed-configs/${GAME_NAME}/${CONFIG_FILE}"
-
   [[ "${PLUTAINER_SKIP_SEED:-false}" == "true" ]] && return 0
-  [[ -e "$CONFIG_PATH" ]] && return 0
-  [[ -f "$src" ]] || return 0
+  (( $# )) || set -- "$CONFIG_FILE"
 
-  mkdir -p "$CONFIG_SOT_DIR"
-  cp "$src" "$CONFIG_PATH"
-  echo "[INFO] Seeded ${CONFIG_PATH} from the bundled ${GAME_NAME} config."
+  local name src
+  for name in "$@"; do
+    src="/home/plutainer/.plutainer/seed-configs/${GAME_NAME}/${name}"
+    [[ -e "$CONFIG_SOT_DIR/$name" ]] && continue
+    [[ -f "$src" ]] || continue
+
+    mkdir -p "$CONFIG_SOT_DIR"
+    cp "$src" "$CONFIG_SOT_DIR/$name"
+    echo "[INFO] Seeded ${CONFIG_SOT_DIR}/${name} from the bundled ${GAME_NAME} config."
+  done
 }
 
 # Set a `cvar "value"` line in a Source-style cfg, rewriting an existing line or
@@ -353,6 +390,86 @@ if lines != original:
         fh.write("\n".join(lines))
     print("[INFO] Set %s in %s." % (name, os.path.basename(path)))
 PY
+}
+
+# Set Key=Value inside [Section] of an Unreal Engine ini, rewriting an existing
+# key or adding it (and the section, if missing). Opt-in like the cfg setter:
+# an empty value is a no-op. Python for the same escaping reason. Keys and
+# section names match case-insensitively, as UE reads them.
+# Args: <path> <section> <key> <value>
+steam_ini_set() {
+  [[ -n "${4:-}" ]] || return 0
+  INI_PATH="$1" INI_SECTION="$2" INI_KEY="$3" INI_VALUE="$4" python3 - <<'PY'
+import os
+
+path, section = os.environ["INI_PATH"], os.environ["INI_SECTION"]
+key, value = os.environ["INI_KEY"], os.environ["INI_VALUE"].replace("\n", "")
+
+with open(path, "r", encoding="utf-8", errors="surrogateescape") as fh:
+    lines = fh.read().split("\n")
+original = list(lines)
+
+start = end = None
+for i, line in enumerate(lines):
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        if start is not None and end is None:
+            end = i
+        if stripped[1:-1].lower() == section.lower():
+            start, end = i, None
+if start is not None and end is None:
+    end = len(lines)
+
+entry = "%s=%s" % (key, value)
+if start is None:
+    while lines and lines[-1] == "":
+        lines.pop()
+    lines.extend(["", "[%s]" % section, entry, ""])
+else:
+    for i in range(start + 1, end):
+        name = lines[i].split("=", 1)[0].strip()
+        if "=" in lines[i] and name.lower() == key.lower():
+            lines[i] = entry
+            break
+    else:
+        last = end
+        while last > start + 1 and lines[last - 1].strip() == "":
+            last -= 1
+        lines.insert(last, entry)
+
+if lines != original:
+    with open(path, "w", encoding="utf-8", errors="surrogateescape") as fh:
+        fh.write("\n".join(lines))
+    print("[INFO] Set [%s] %s in %s." % (section, key, os.path.basename(path)))
+PY
+}
+
+# Read Key out of [Section] of an Unreal Engine ini. Prints the value, or nothing.
+# Args: <path> <section> <key>
+steam_ini_get() {
+  [[ -f "$1" ]] || return 0
+  INI_PATH="$1" INI_SECTION="$2" INI_KEY="$3" python3 - <<'PY'
+import os
+
+section, key = os.environ["INI_SECTION"].lower(), os.environ["INI_KEY"].lower()
+current, value = None, ""
+with open(os.environ["INI_PATH"], "r", encoding="utf-8", errors="surrogateescape") as fh:
+    for line in fh:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current = stripped[1:-1].lower()
+        elif current == section and "=" in stripped and not stripped.startswith(";"):
+            name, _, val = stripped.partition("=")
+            if name.strip().lower() == key:
+                value = val.strip()
+print(value)
+PY
+}
+
+# Game Server Login Token, from https://steamcommunity.com/dev/managegameservers.
+# One variable for the family; PLUTAINER_CS2_GSLT predates it and is still read.
+steam_gslt() {
+  printf '%s' "${PLUTAINER_STEAM_GSLT:-${PLUTAINER_CS2_GSLT:-}}"
 }
 
 # Refuse to start with the same shape of message the CoD families give: say what
@@ -598,10 +715,20 @@ steam_reclaim_depot_configs() {
 # it and surface it in app/logs/ like every other game's. Existing logs are
 # moved rather than dropped.
 steam_redirect_srcds_logs() {
-  local live="$STEAM_INSTALL_DIR/$STEAM_GAME_DIR/logs"
-  local persistent="$STEAM_DATA_DIR/logs"
+  steam_persist_dir "$STEAM_GAME_DIR/logs" logs
+}
 
-  mkdir -p "$persistent"
+# Replace <install>/<rel> with a symlink to <data>/<data-rel>, so a directory the
+# server writes into inside the SteamCMD-owned install actually lives in the
+# persistent data dir. Whatever the server already wrote there is moved across
+# (never overwriting), and a directory that cannot be emptied is left in place
+# with a warning rather than lost.
+# Args: <path relative to the install> <path relative to the data dir>
+steam_persist_dir() {
+  local live="$STEAM_INSTALL_DIR/$1"
+  local persistent="$STEAM_DATA_DIR/$2"
+
+  mkdir -p "$persistent" "$(dirname "$live")"
 
   if [[ -L "$live" ]]; then
     ln -sfn "$persistent" "$live"
@@ -609,11 +736,12 @@ steam_redirect_srcds_logs() {
   fi
 
   if [[ -d "$live" ]]; then
-    find "$live" -maxdepth 1 -type f -exec mv -n -t "$persistent" {} + 2>/dev/null || true
-    rmdir "$live" 2>/dev/null || {
-      echo "[WARN] ${live} is not empty and could not be replaced; srcds logs will stay inside the install." >&2
+    # Copy first and delete only after the copy succeeded; existing files in
+    # the data dir win (-n), since they are the persistent ones.
+    if ! cp -an "$live/." "$persistent/" || ! rm -rf "$live"; then
+      echo "[WARN] ${live} could not be moved to ${persistent}; it stays inside the install." >&2
       return 0
-    }
+    fi
   fi
 
   ln -sfn "$persistent" "$live"
@@ -660,10 +788,12 @@ steam_launch_args_cs2() {
   # same role CoD4x's masterserver token plays. Without one CS2 runs and is
   # joinable directly but never appears in the browser — and passing an empty
   # +sv_setsteamaccount is worse than omitting it.
-  if [[ -n "${PLUTAINER_CS2_GSLT:-}" ]]; then
-    STEAM_LAUNCH_ARGS+=( +sv_setsteamaccount "$PLUTAINER_CS2_GSLT" )
+  local gslt
+  gslt="$(steam_gslt)"
+  if [[ -n "$gslt" ]]; then
+    STEAM_LAUNCH_ARGS+=( +sv_setsteamaccount "$gslt" )
   else
-    echo "[INFO] No PLUTAINER_CS2_GSLT set — the server runs but stays off the public server list."
+    echo "[INFO] No PLUTAINER_STEAM_GSLT set — the server runs but stays off the public server list."
   fi
 }
 
@@ -713,3 +843,108 @@ steam_admin_srcds() {
   ADMIN_PASSWORD=$(steam_cfg_get_cvar "$CONFIG_PATH" rcon_password)
 }
 
+# --- Insurgency: Sandstorm (Unreal Engine 4) --------------------------------
+#
+# Every config the server reads is a file in app/configs/, linked to where the
+# engine looks for it:
+#   Game.ini, Engine.ini   -> Insurgency/Saved/Config/LinuxServer/
+#   MapCycle.txt, Admins.txt, Motd.txt
+#                          -> Insurgency/Config/Server/
+# Insurgency/Saved itself (logs, the engine's other ini files, mod.io cache) is
+# moved out of the install into gamedata/sandstorm/Saved.
+#
+# Unreal rewrites Saved/Config/LinuxServer/Game.ini from memory when the server
+# shuts down. It writes through the symlink, so configs/Game.ini keeps every
+# value — but ini comments do not survive the rewrite. Measured.
+
+STEAM_SANDSTORM_INIS=(Game.ini Engine.ini)
+STEAM_SANDSTORM_SERVER_FILES=(MapCycle.txt Admins.txt Motd.txt)
+
+steam_seed_sandstorm() {
+  steam_seed_config_from_image Game.ini MapCycle.txt Admins.txt
+}
+
+steam_configure_sandstorm() {
+  # The server name and ports are launch flags; only RCON lives in the ini.
+  if [[ -n "${PLUTAINER_RCON_PASSWORD:-}" ]]; then
+    steam_ini_set "$CONFIG_PATH" Rcon bEnabled True
+    steam_ini_set "$CONFIG_PATH" Rcon Password "$PLUTAINER_RCON_PASSWORD"
+  fi
+}
+
+steam_stage_sandstorm() {
+  steam_link_steamclient
+  steam_persist_dir "$STEAM_GAME_DIR/Saved" Saved
+
+  local ini_dir="$STEAM_INSTALL_DIR/$STEAM_GAME_DIR/Saved/Config/LinuxServer"
+  local server_dir="$STEAM_INSTALL_DIR/$STEAM_GAME_DIR/Config/Server"
+  steam_lift_engine_configs "$ini_dir" "${STEAM_SANDSTORM_INIS[@]}"
+  steam_lift_engine_configs "$server_dir" "${STEAM_SANDSTORM_SERVER_FILES[@]}"
+  link_named_configs "$ini_dir" "${STEAM_SANDSTORM_INIS[@]}"
+  link_named_configs "$server_dir" "${STEAM_SANDSTORM_SERVER_FILES[@]}"
+}
+
+# A real file at the engine path, written there before Plutainer managed it,
+# moves into configs/ — the auto-lift the CoD families do — unless configs/
+# already has one, in which case it is kept aside as <name>.pre-plutainer.
+# Args: <engine dir> <name ...>
+steam_lift_engine_configs() {
+  local dir="$1" name target
+  shift
+  [[ "${PLUTAINER_USE_RAW_CONFIGS:-}" == "true" ]] && return 0
+  for name in "$@"; do
+    target="$dir/$name"
+    [[ -f "$target" && ! -L "$target" ]] || continue
+    if [[ -e "$PLUTAINER_CONFIGS_DIR/$name" ]]; then
+      mv -f "$target" "$target.pre-plutainer"
+      echo "[INFO] Kept the server's own ${name} aside as ${name}.pre-plutainer; yours from app/configs/ takes its place."
+    else
+      mv "$target" "$PLUTAINER_CONFIGS_DIR/$name"
+      echo "[INFO] Moved ${name} from the server's own config dir into app/configs/."
+    fi
+  done
+}
+
+steam_launch_args_sandstorm() {
+  local url="${PLUTAINER_START_MAP:-$STEAM_DEFAULT_MAP}"
+  [[ -n "${PLUTAINER_SANDSTORM_MODE:-}" ]] && url+="?Game=${PLUTAINER_SANDSTORM_MODE}"
+  [[ -n "${PLUTAINER_MAX_CLIENTS:-}" ]] && url+="?MaxPlayers=${PLUTAINER_MAX_CLIENTS}"
+
+  resolve_query_port || hold_indefinitely "Could not resolve the query port."
+
+  STEAM_LAUNCH_ARGS=(
+    "$url"
+    "-Port=$ACTIVE_PORT"
+    "-QueryPort=$QUERY_PORT"
+    -log
+  )
+  [[ -n "${PLUTAINER_SERVER_NAME:-}" ]] && STEAM_LAUNCH_ARGS+=( "-hostname=$PLUTAINER_SERVER_NAME" )
+  # -MapCycle/-AdminList name a file in Config/Server/ without its extension.
+  [[ -e "$PLUTAINER_CONFIGS_DIR/MapCycle.txt" ]] && STEAM_LAUNCH_ARGS+=( -MapCycle=MapCycle )
+  [[ -e "$PLUTAINER_CONFIGS_DIR/Admins.txt" ]]   && STEAM_LAUNCH_ARGS+=( -AdminList=Admins )
+  [[ -e "$PLUTAINER_CONFIGS_DIR/Motd.txt" ]]     && STEAM_LAUNCH_ARGS+=( -Motd=Motd )
+
+  local gslt
+  gslt="$(steam_gslt)"
+  if [[ -n "$gslt" ]]; then
+    STEAM_LAUNCH_ARGS+=( "-GSLTToken=$gslt" )
+  else
+    echo "[INFO] No PLUTAINER_STEAM_GSLT set — the server runs but stays off the public server list."
+  fi
+}
+
+# RCON is configured in Game.ini's [Rcon] section, on a TCP port of its own.
+steam_admin_sandstorm() {
+  local enabled port
+  enabled=$(steam_ini_get "$CONFIG_PATH" Rcon bEnabled)
+  port=$(steam_ini_get "$CONFIG_PATH" Rcon ListenPort)
+
+  if [[ "${enabled,,}" != "true" ]]; then
+    ADMIN_PROTOCOL="disabled"
+    ADMIN_DISABLED_HINT="Set bEnabled=True and a Password in the [Rcon] section of ${CONFIG_FILE} (or set PLUTAINER_RCON_PASSWORD), then restart."
+    return 0
+  fi
+
+  ADMIN_PORT="${port:-27015}"
+  ADMIN_PASSWORD=$(steam_ini_get "$CONFIG_PATH" Rcon Password)
+}

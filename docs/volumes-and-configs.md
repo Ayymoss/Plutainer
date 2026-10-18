@@ -11,7 +11,7 @@ Where everything lives, and why your configs are in one folder instead of scatte
 
 The gamefiles mount is read-only and shareable — point ten servers at the same copy. Anything an updater downloads goes into `app/` instead, so don't stage binaries in the gamefiles mount.
 
-The SteamCMD games (`7dtd`, `cs2`, `l4d2`, `hl2dm`) do not use `/home/plutainer/gamefiles` at all; SteamCMD installs them under the app volume instead. Nebula does use it: mount the root of your owned Dyson Sphere Program installation. Its bundled headless Steam API layer is copied only into `app/runtime/`; it never replaces the original DLL in this read-only mount.
+The SteamCMD games (`7dtd`, `cs2`, `l4d2`, `hl2dm`, `sandstorm`) do not use `/home/plutainer/gamefiles` at all; SteamCMD installs them under the app volume instead. Nebula does use it: mount the root of your owned Dyson Sphere Program installation. Its bundled headless Steam API layer is copied only into `app/runtime/`; it never replaces the original DLL in this read-only mount.
 
 ## What appears in `app/`
 
