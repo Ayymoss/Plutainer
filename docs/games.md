@@ -17,6 +17,7 @@ What each game needs from you, and what Plutainer supplies. Find your game, chec
 | Counter-Strike 2 | `cs2` | token, to be listed | 27015 | `server.cfg` |
 | Left 4 Dead 2 | `l4d2` | no | 27015 | `server.cfg` |
 | Half-Life 2: Deathmatch | `hl2dm` | no | 27015 | `server.cfg` |
+| Insurgency: Sandstorm | `sandstorm` | token, to be listed | 27102, query 27131 | `Game.ini`, `MapCycle.txt`, `Admins.txt` |
 | Dyson Sphere Program (Nebula) | `nebula` | no | 8469/TCP | `nebula.cfg`, `nebulaGameDescSettings.cfg` |
 
 `PLUTAINER_CONFIG_FILE` must name one of the seeded files, or a config you place in `app/configs/` yourself. Get it wrong and the container refuses to start with a hint listing what it found — including case-only mismatches like `Server.cfg` vs `server.cfg`.
@@ -92,7 +93,7 @@ Nebula follows the current stable Thunderstore release by default. Set `PLUTAINE
 
 Nebula documents Ctrl+C as its save-and-exit path. Add `stop_signal: SIGTERM` and `stop_grace_period: 90s`; Plutainer catches the container signal, sends SIGINT to Wine, and waits for both `_lastexit_` files to settle. If Wine remains stuck after the durable save, Plutainer terminates that wrapper and exits the service cleanly. Without those compose settings Docker uses the image's default SIGKILL and the last autosave is the recovery point.
 
-### The SteamCMD games (7DTD, CS2, L4D2, HL2:DM)
+### The SteamCMD games (7DTD, CS2, L4D2, HL2:DM, Sandstorm)
 
 These work differently enough from the Call of Duty families to be worth reading once.
 
@@ -100,7 +101,7 @@ These work differently enough from the Call of Duty families to be worth reading
 
 **Two directories, and the split matters.** The install goes in `app/runtime/steam/<game>/` and SteamCMD owns it — it may replace anything in there on an update. Everything you would be upset to lose (worlds, saves, logs) is kept in `app/runtime/gamedata/<game>/`, which SteamCMD never touches. Your config stays in `app/configs/` like every other game.
 
-**Budget the disk, seriously.** CS2 is **67 GB** installed, 7DTD roughly 17 GB, L4D2 9.2 GB, HL2:DM about 6 GB. First start is almost entirely download, and CS2's will exceed the health check's five-minute grace period — the container shows `unhealthy` while it works, then recovers by itself. Watch `docker logs -f`, not `docker ps`.
+**Budget the disk, seriously.** CS2 is **67 GB** installed, 7DTD roughly 17 GB, L4D2 9.2 GB, HL2:DM about 6 GB, Sandstorm 4.7 GB. First start is almost entirely download, and CS2's will exceed the health check's five-minute grace period — the container shows `unhealthy` while it works, then recovers by itself. Watch `docker logs -f`, not `docker ps`.
 
 **They are amd64-only**, because SteamCMD ships x86_64 binaries only. The arm64 image refuses with an explanation rather than failing obscurely.
 
@@ -131,13 +132,54 @@ Adding another Source game — Day of Defeat, TF2, Garry's Mod — is a table ro
 
 **Plutainer takes over the depot's own `server.cfg`.** Several of these ship a stub config in the install directory; CS2's is 33 bytes reading `// Defaults in server_default.cfg`. Yours from `app/configs/` replaces it, and the original is kept beside it as `server.cfg.depot-original`. Without this the server would quietly run on stock settings while your config sat there looking correct.
 
-**CS2 specifics.** Set `PLUTAINER_CS2_GSLT` to a Game Server Login Token from <https://steamcommunity.com/dev/managegameservers> — same role as CoD4x's masterserver token: without it the server runs and accepts direct connections but never shows up in the browser. RCON needs no extra setup; Plutainer passes `-usercon` (CS2 refuses every RCON connection without it, regardless of password) and supplies the password on the command line as well as in your config, because CS2 starts RCON before it execs `server.cfg`.
+**CS2 specifics.** Set `PLUTAINER_STEAM_GSLT` (or the older `PLUTAINER_CS2_GSLT`) to a Game Server Login Token from <https://steamcommunity.com/dev/managegameservers> — same role as CoD4x's masterserver token: without it the server runs and accepts direct connections but never shows up in the browser. RCON needs no extra setup; Plutainer passes `-usercon` (CS2 refuses every RCON connection without it, regardless of password) and supplies the password on the command line as well as in your config, because CS2 starts RCON before it execs `server.cfg`.
 
 One thing to know: `+game_alias competitive` makes CS2 exec its own `gamemode_competitive.cfg` *after* your `server.cfg`, so a handful of cvars that gamemode file also sets — `bot_quota` is the usual one — will be overridden. That is stock Source behaviour, not Plutainer. Change the mode with `PLUTAINER_CS2_GAME_ALIAS`, or edit the gamemode file in the install directly.
 
 **L4D2 needs a two-phase install, and Plutainer does it for you.** Valve restricted anonymous Linux installation of app `222860`: every depot, *including the 9.5 GB content one*, is flagged `windows`, so a plain `app_update` on Linux fails with `Invalid platform`. This is an open Valve-side issue ([steam-for-linux#11522](https://github.com/ValveSoftware/steam-for-linux/issues/11522)) that also breaks [LinuxGSM](https://github.com/GameServerManagers/LinuxGSM/issues/4754), so if you have run L4D2 on Linux before and it stopped working, this is why.
 
 The fix is to pull the content as Windows and then re-run the update as Linux, which overlays the native binaries depot on top. Plutainer expresses that as `STEAM_INSTALL_PLATFORMS="windows linux"` in the game table. The result is a genuinely native server — `srcds_linux`, no Wine, no Steam account — that reports `os: Linux Dedicated`. It costs ~9.2 GB and a longer first start, since the Windows content is downloaded before the Linux binaries land on top.
+
+#### Insurgency: Sandstorm (`sandstorm`)
+
+Steam app `581330`, a native Linux Unreal Engine 4 server. Plutainer seeds three files into `app/configs/` and links each to where the engine reads it:
+
+| File in `app/configs/` | Linked into the install at | Holds |
+| --- | --- | --- |
+| `Game.ini` | `Insurgency/Saved/Config/LinuxServer/` | Game mode settings (`[/Script/Insurgency.INSCoopMode]` bots, `bMapVoting`, …) and RCON |
+| `MapCycle.txt` | `Insurgency/Config/Server/` | One scenario per line, `(Scenario="Scenario_Refinery_Checkpoint_Security",Lighting="Day",Mode="Checkpoint")` |
+| `Admins.txt` | `Insurgency/Config/Server/` | One Steam64 ID per line; those players get the in-game admin menu |
+
+An `Engine.ini` or `Motd.txt` you add to `app/configs/` is linked the same way, and `Motd.txt` is passed as `-Motd`. `Insurgency/Saved/` itself, with the logs and the engine's other ini files, is kept in `app/runtime/gamedata/sandstorm/Saved/`, outside the SteamCMD-owned install.
+
+**Two UDP ports, not one.** The game port (`PLUTAINER_PORT`, default `27102`) carries play; the server browser and the health check talk to the **query port** (`PLUTAINER_QUERY_PORT`, default `27131`). Sandstorm ignores A2S on the game port entirely, so publish both:
+
+```yaml
+ports:
+  - "27102:27102/udp"
+  - "27131:27131/udp"
+```
+
+**RCON is its own TCP listener**, configured in `Game.ini`'s `[Rcon]` section. `PLUTAINER_RCON_PASSWORD` sets `Password` and switches `bEnabled` on; `ListenPort` defaults to `27015`. Like 7DTD's telnet console, keep it off public interfaces — `rcon-cli` reaches it from inside the container, and a host tool needs only a loopback or private publish:
+
+```yaml
+  - "127.0.0.1:27015:27015/tcp"
+```
+
+**The boot map is a travel URL.** `PLUTAINER_START_MAP` defaults to `Oilfield?Scenario=Scenario_Refinery_Checkpoint_Security` (the map name comes first, then the scenario). `PLUTAINER_SANDSTORM_MODE` appends `?Game=<mode>`, e.g. `CheckpointHardcore`, and `PLUTAINER_MAX_CLIENTS` appends `?MaxPlayers=`. The seeded `MapCycle.txt` names its mode on every line, so change `Mode="Checkpoint"` there too if you run another mode, or map votes will switch back. `PLUTAINER_SERVER_NAME` becomes `-hostname`.
+
+**Set `PLUTAINER_STEAM_GSLT`** to a Game Server Login Token for app `581320` (the game, not the server's `581330`) from <https://steamcommunity.com/dev/managegameservers>. Without one the server runs and accepts direct connections but is not listed.
+
+**The server rewrites `Game.ini` when it shuts down cleanly.** Unreal writes its settings back from memory on exit. It writes through Plutainer's symlink, so `app/configs/Game.ini` keeps every value — but **ini comments do not survive**. This only happens on a graceful stop, i.e. with `stop_signal: SIGTERM` in your compose file (measured: exit 0, link intact, values and RCON password kept, comments gone). Bot counts are the usual edit:
+
+```ini
+[/Script/Insurgency.INSCoopMode]
+MinimumEnemies=12
+MaximumEnemies=38
+AIDifficulty=0.5
+```
+
+`rcon-cli gamemodeproperty MaximumEnemies` reads a value back from the running server, and `rcon-cli gamemodeproperty MaximumEnemies 30` changes it until the next map.
 
 ### T5 (Black Ops)
 
