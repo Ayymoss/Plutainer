@@ -45,6 +45,23 @@ On first start `iw4x-launcher` fetches another 1–2 GB into `app/runtime/gamefi
 
 > **Never put your own files in `zone/patch/` or `zone/zonebuilder/`.** A *symlink* there stops the launcher extracting at all, which silently disables updates. Custom scripts and assets go in `userraw/`, which the updater never touches.
 
+**Every update check costs 5–6 GitHub API requests**, even when nothing has changed. GitHub allows 60 an hour without a token, shared by everything behind your public IP, and the launcher cannot take one, so restarting often (say, while tuning server settings) can run you out. Turn the check off and update when you choose:
+
+```yaml
+    environment:
+      PLUTAINER_AUTO_UPDATE: "false"
+```
+
+```bash
+docker exec -w /home/plutainer/app/runtime/gamefiles <container> ./iw4x-launcher --skip-launch --no-self-update
+```
+
+The running server keeps the old files until it restarts:
+
+```bash
+docker restart <container>
+```
+
 ### BOIII
 
 BO3 server files: `BlackOps3_UnrankedDedicatedServer.exe`, `zone/`, `machinecfg`, `codlogo.bmp`, and the `steam_api64` / `steamclient64` / `tier0_s64` / `vstdlib_s64` DLLs. Plutainer downloads `boiii.exe` itself and re-fetches only when upstream is newer.

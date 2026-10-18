@@ -599,11 +599,32 @@ cod_stage_iw4x() {
   # a full MW2 install's 39, and zone/zonebuilder is the same lone file.
   #
   # Every other component stages downloads and renames into place, which
-  # replaces a symlink rather than writing through it — so mirroring these two
-  # is safe, and useful, since the reconciler hash-validates existing host
-  # fastfiles and skips re-downloading matches.
+  # replaces a symlink rather than writing through it, so mirroring is safe.
   link_dir_contents "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" zone/english
-  link_dir_contents "$PLUTAINER_SOURCE_DIR" "$PLUTAINER_GAMEFILES_DIR" zone/dlc
+
+  # DLC lives in zone/iw4x/x86/dlc/ now, so the host's zone/dlc/ is mirrored
+  # there rather than to its own path. A legacy zone/dlc/ is what the game's
+  # zone conversion takes over at every start, and it overwrites the launcher's
+  # copies with the host's:
+  #   replacing "zone/dlc/mp_backlot.ff" to "zone/iw4x/x86/dlc/mp_backlot.ff"
+  # Re-mirroring it each start made that a loop: wherever the host's bytes
+  # differ from upstream's, the next launcher run fetched the file again, 231 MB
+  # per restart. Maps the launcher does not ship (the official MW2 DLC) still
+  # arrive through this mirror. Must follow zone/english, which is what turns an
+  # older image's zone symlink into a real directory.
+  link_dir_contents "$PLUTAINER_SOURCE_DIR/zone" "$PLUTAINER_GAMEFILES_DIR/zone/iw4x/x86" dlc
+
+  # Volumes from before this carry the old zone/dlc links (per file, or the
+  # whole directory from older images still), which the conversion would keep
+  # taking over. Only links go; a real file is left for the conversion to
+  # migrate once, as it would on a normal install.
+  local legacy_dlc="$PLUTAINER_GAMEFILES_DIR/zone/dlc"
+  if [[ -L "$legacy_dlc" ]]; then
+    rm -f "$legacy_dlc"
+  elif [[ -d "$legacy_dlc" ]]; then
+    find "$legacy_dlc" -type l -delete
+    rmdir --ignore-fail-on-non-empty "$legacy_dlc"
+  fi
 }
 
 cod_update_iw4x() {
