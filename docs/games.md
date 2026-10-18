@@ -166,6 +166,20 @@ ports:
   - "127.0.0.1:27015:27015/tcp"
 ```
 
+**Voice chat needs `network_mode: host`.** Sandstorm's voice is peer-to-peer (ICE) on a UDP port the server picks at random on every start, so it cannot be published, and behind Docker's NAT the server's connectivity checks to each client go unanswered — players see voice as disabled. On the host network the game, query and voice ports are all bound directly, which also makes the `ports:` section irrelevant. Measured: in bridge mode the server sent its checks from the container's `0.0.0.0:25150` with no reply; on the host network it binds a fresh port on the public address.
+
+On the host network the RCON listener is public unless you bind it. `ListenAddressOverride` is **ignored unless `bUseBroadcastAddress=False`** is set as well — measured, the listener stayed on `0.0.0.0` with the override alone:
+
+```ini
+[Rcon]
+bEnabled=True
+ListenPort=27200
+bUseBroadcastAddress=False
+ListenAddressOverride=127.0.0.1   ; or a private bridge address a containerised admin tool can reach
+```
+
+Give each server its own `ListenPort` when several share the host network. `rcon-cli` finds the listener on any of the host's addresses.
+
 **The boot map is a travel URL.** `PLUTAINER_START_MAP` defaults to `Oilfield?Scenario=Scenario_Refinery_Checkpoint_Security` (the map name comes first, then the scenario). `PLUTAINER_SANDSTORM_MODE` appends `?Game=<mode>`, e.g. `CheckpointHardcore`, and `PLUTAINER_MAX_CLIENTS` appends `?MaxPlayers=`. The seeded `MapCycle.txt` names its mode on every line, so change `Mode="Checkpoint"` there too if you run another mode, or map votes will switch back. `PLUTAINER_SERVER_NAME` becomes `-hostname`.
 
 **Set `PLUTAINER_STEAM_GSLT`** to a Game Server Login Token for app `581320` (the game, not the server's `581330`) from <https://steamcommunity.com/dev/managegameservers>. Without one the server runs and accepts direct connections but is not listed.
