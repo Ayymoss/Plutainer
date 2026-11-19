@@ -31,17 +31,15 @@ SEED_ROOT="$REPO_ROOT/seed-configs"
 # seed-configs/<game>/<dest-subdir>. Omit dest-subdir to land at the game root.
 # The layouts differ per repo because each community author picked their own.
 # Only the subpaths Plutainer actually uses are vendored. The Dss0 bundle's t7x/
-# tree is another client's data directory, but its lobby script is not optional:
-# sv_lobby_mode and sv_skip_lobby are read by that Lua, not by any engine, so
-# without it a zombies config hosts a multiplayer lobby and never loads a map.
-# BOIII loads server lobby scripts from <game>/boiii/lobby_scripts/, so the
-# script moves there and the rest of t7x/ is left behind.
+# tree is another client's data directory and is left behind. Its lobby script
+# is not vendored either: BOIII bundles server_lobby_selector in its own data/
+# since v3.1.0, so sync-boiii.py delivers it.
 SEEDS=(
   "t4|xerxes-at/T4ServerConfigs|main|main"
   "t5|xerxes-at/T5ServerConfig|master|localappdata/Plutonium/storage/t5"
   "t6|xerxes-at/T6ServerConfigs|master|localappdata/Plutonium/storage/t6"
   "iw5|xerxes-at/IW5ServerConfig|master|admin"
-  "boiii|Dss0/t7-server-config|main|zone:zone,t7x/lobby_scripts:boiii/lobby_scripts"
+  "boiii|Dss0/t7-server-config|main|zone:zone"
   "iw4x|iw4x/iw4-server-configs|main|userraw:userraw"
 )
 
