@@ -50,6 +50,12 @@ if (( STEAM_UDP_SPAN > 1 )); then
 else
   echo "[INFO]   port    : $ACTIVE_PORT"
 fi
+if [[ -n "$STEAM_DEFAULT_QUERY_PORT" ]]; then
+  resolve_query_port || hold_indefinitely "Could not resolve the query port."
+  echo "[INFO]   query   : $QUERY_PORT (UDP; the server browser and health check use this one)"
+elif [[ -n "${PLUTAINER_QUERY_PORT:-}" ]]; then
+  echo "[WARN] PLUTAINER_QUERY_PORT is ignored: ${GAME_NAME} answers queries on its game port." >&2
+fi
 
 mkdir -p "$PLUTAINER_CONFIGS_DIR" "$PLUTAINER_APP_DIR/logs" "$STEAM_DATA_DIR"
 
@@ -101,7 +107,21 @@ if [[ -n "${PLUTAINER_EXTRA_ARGS:-}" ]]; then
 fi
 
 echo "[INFO] Starting ${PLUTAINER_SERVER_NAME:-$GAME_NAME}..."
-echo "[INFO] Command: $STEAM_SERVER_PATH ${STEAM_LAUNCH_ARGS[*]}"
+# Tokens and passwords do not belong in `docker logs`.
+declare -a STEAM_SHOWN_ARGS=()
+_redact_next=false
+for _arg in "${STEAM_LAUNCH_ARGS[@]}"; do
+  if [[ "$_redact_next" == true ]]; then
+    STEAM_SHOWN_ARGS+=( "<redacted>" ); _redact_next=false
+  elif [[ "$_arg" == -GSLTToken=* ]]; then
+    STEAM_SHOWN_ARGS+=( "-GSLTToken=<redacted>" )
+  elif [[ "$_arg" == +sv_setsteamaccount || "$_arg" == +rcon_password ]]; then
+    STEAM_SHOWN_ARGS+=( "$_arg" ); _redact_next=true
+  else
+    STEAM_SHOWN_ARGS+=( "$_arg" )
+  fi
+done
+echo "[INFO] Command: $STEAM_SERVER_PATH ${STEAM_SHOWN_ARGS[*]}"
 
 # Some servers must be started from a particular directory (CS2's cs2.sh
 # resolves the Steam Runtime relative to cwd). Defaults to the install root.

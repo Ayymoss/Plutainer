@@ -108,7 +108,7 @@ link_configs() {
   [[ "${PLUTAINER_USE_RAW_CONFIGS:-}" == "true" ]] && return 0
   [[ -d "$PLUTAINER_CONFIGS_DIR" ]] || return 0
 
-  local engine_dir f base link target_rel
+  local engine_dir f link
   for engine_dir in "$@"; do
     [[ -n "$engine_dir" ]] || continue
     mkdir -p "$engine_dir"
@@ -116,15 +116,7 @@ link_configs() {
     # Fan-out: configs/<X>.cfg -> engine_dir/<X>.cfg
     for f in "$PLUTAINER_CONFIGS_DIR"/*.cfg; do
       [[ -e "$f" ]] || continue
-      base="$(basename "$f")"
-      link="$engine_dir/$base"
-      if [[ -e "$link" && ! -L "$link" ]]; then
-        echo "[link_configs] WARNING: real file at $link blocks symlink to $f" >&2
-        echo "  Move or delete the real file if you want it managed via configs/." >&2
-        continue
-      fi
-      target_rel=$(realpath --relative-to="$engine_dir" "$f")
-      ln -sfn "$target_rel" "$link"
+      link_config_file "$engine_dir" "$f"
     done
 
     # Reap: drop cfg symlinks here whose source no longer resolves.
@@ -133,5 +125,43 @@ link_configs() {
       echo "[link_configs] reaping dangling: $link" >&2
       rm -f "$link"
     done
+  done
+}
+
+# Place one relative symlink at <engine_dir>/<basename> pointing at <src> in
+# configs/. A real file there blocks it with a warning rather than being
+# replaced — the same rule link_configs applies to every cfg it fans out.
+# Args: <engine_dir> <src>
+link_config_file() {
+  local engine_dir="$1" f="$2" link target_rel
+  link="$engine_dir/$(basename "$f")"
+  if [[ -e "$link" && ! -L "$link" ]]; then
+    echo "[link_configs] WARNING: real file at $link blocks symlink to $f" >&2
+    echo "  Move or delete the real file if you want it managed via configs/." >&2
+    return 0
+  fi
+  target_rel=$(realpath --relative-to="$engine_dir" "$f")
+  ln -sfn "$target_rel" "$link"
+}
+
+# link_configs for a server whose configs are not *.cfg: link the named files
+# from configs/ into <engine_dir>. Names missing from configs/ are skipped, and
+# a link to one that has since been deleted is reaped. Same raw-mode opt-out.
+# Args: <engine_dir> <name1> [name2 ...]
+link_named_configs() {
+  [[ "${PLUTAINER_USE_RAW_CONFIGS:-}" == "true" ]] && return 0
+  [[ -d "$PLUTAINER_CONFIGS_DIR" ]] || return 0
+
+  local engine_dir="$1" name link
+  shift
+  mkdir -p "$engine_dir"
+  for name in "$@"; do
+    link="$engine_dir/$name"
+    if [[ -e "$PLUTAINER_CONFIGS_DIR/$name" ]]; then
+      link_config_file "$engine_dir" "$PLUTAINER_CONFIGS_DIR/$name"
+    elif [[ -L "$link" && ! -e "$link" ]]; then
+      echo "[link_configs] reaping dangling: $link" >&2
+      rm -f "$link"
+    fi
   done
 }

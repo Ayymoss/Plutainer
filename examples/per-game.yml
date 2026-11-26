@@ -233,7 +233,7 @@ services:
       # Needed to appear in the server browser. The server runs without it,
       # but nobody finds it. Get one at:
       # https://steamcommunity.com/dev/managegameservers
-      PLUTAINER_CS2_GSLT: ${CS2_GSLT}
+      PLUTAINER_STEAM_GSLT: ${CS2_GSLT}
       # PLUTAINER_CS2_GAME_ALIAS: competitive
       # PLUTAINER_START_MAP: de_dust2
 
@@ -278,6 +278,33 @@ services:
       PLUTAINER_RCON_PASSWORD: ${HL2DM_RCON}
       # PLUTAINER_MAX_CLIENTS: "16"
       # PLUTAINER_START_MAP: dm_lockdown
+
+  # Insurgency: Sandstorm. Unreal Engine 4, Valve RCON on its own port.
+  # Two UDP ports: the game port, and the query port the browser and the
+  # health check use. RCON (Game.ini [Rcon], default 27015/tcp) stays private.
+  # See docs/games.md#insurgency-sandstorm-sandstorm.
+  sandstorm-1:
+    image: ghcr.io/ayymoss/plutainer:latest
+    container_name: sandstorm-1
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    ports:
+      - "27102:27102/udp"
+      - "27131:27131/udp"
+      - "127.0.0.1:27015:27015/tcp"
+    volumes:
+      - ./sandstorm-1:/home/plutainer/app
+    environment:
+      PLUTAINER_GAME: sandstorm
+      PLUTAINER_SERVER_NAME: My Sandstorm Server
+      PLUTAINER_RCON_PASSWORD: ${SANDSTORM_RCON}
+      # Needed to appear in the server browser (token for app 581320):
+      # https://steamcommunity.com/dev/managegameservers
+      PLUTAINER_STEAM_GSLT: ${SANDSTORM_GSLT}
+      # PLUTAINER_SANDSTORM_MODE: CheckpointHardcore
+      # PLUTAINER_MAX_CLIENTS: "8"
+      # PLUTAINER_START_MAP: Oilfield?Scenario=Scenario_Refinery_Checkpoint_Security
 
   # --------------------------------------------------------------- Nebula
   # Dyson Sphere Program. Supply the owned Windows game files; Plutainer

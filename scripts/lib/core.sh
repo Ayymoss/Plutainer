@@ -359,6 +359,28 @@ resolve_active_port() {
   fi
 }
 
+# The port the server answers its unauthenticated status query on. For almost
+# every game that is the game port itself. Some engines listen for queries on a
+# port of their own (Insurgency: Sandstorm answers A2S on its -QueryPort and
+# nothing on the game port), and the family table says so by giving a default
+# query port; only those games honour PLUTAINER_QUERY_PORT. Resolved here for
+# the same reason ACTIVE_PORT is: one answer for the entry script and the health
+# check.
+resolve_query_port() {
+  resolve_active_port || return 1
+  QUERY_PORT="$ACTIVE_PORT"
+
+  local default=""
+  [[ "${GAME_TYPE}" == "steam" ]] && default="${STEAM_DEFAULT_QUERY_PORT:-}"
+  [[ -n "$default" ]] || return 0
+
+  QUERY_PORT="${PLUTAINER_QUERY_PORT:-$default}"
+  if [[ ! "$QUERY_PORT" =~ ^[0-9]+$ ]] || (( QUERY_PORT < 1 || QUERY_PORT > 65535 )); then
+    echo "[ERROR] PLUTAINER_QUERY_PORT must be a port number between 1 and 65535, got '${QUERY_PORT}'." >&2
+    return 1
+  fi
+}
+
 # Resolve CONFIG_PATH (and the surrounding CONFIG_SOT_DIR/ALT_CONFIG_DIR) for
 # whichever family is active. This is the entry point healthcheck.sh and
 # rcon-cli use; entry scripts call the family functions directly.

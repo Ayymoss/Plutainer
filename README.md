@@ -36,6 +36,7 @@ services:
 | Counter-Strike 2 | `cs2` | Source 2, amd64 only. Installed by SteamCMD; ~67 GB. Needs a [GSLT](docs/games.md#the-source-games-cs2-l4d2-hl2dm) to be listed |
 | Left 4 Dead 2 | `l4d2` | Source engine, amd64 only. Installed by SteamCMD; no gamefiles mount |
 | Half-Life 2: Deathmatch | `hl2dm` | Source engine, amd64 only. Installed by SteamCMD; no gamefiles mount |
+| Insurgency: Sandstorm | `sandstorm` | Unreal Engine 4, amd64 only. Installed by SteamCMD; ~4.7 GB. Separate query port. Needs a [GSLT](docs/games.md#insurgency-sandstorm-sandstorm) to be listed |
 | Dyson Sphere Program | `nebula` | Nebula multiplayer mod. Supply your owned DSP files; Plutainer supplies the headless runtime; TCP 8469 |
 
 Image: `ghcr.io/ayymoss/plutainer:latest` — multi-arch (amd64 + arm64), with [documented architecture exceptions](docs/games.md#architecture-support).
