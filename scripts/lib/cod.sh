@@ -828,8 +828,8 @@ cod_launch_boiii() {
   cod_append_extra_args
 
   # No +map_rotate, deliberately, and PLUTAINER_MAP_ROTATE does not apply. The
-  # first map is loaded by the seeded lobby script
-  # (boiii/lobby_scripts/server_lobby_selector): it hosts the lobby that
+  # first map is loaded by BOIII's bundled lobby script
+  # (data/lobby_scripts/server_lobby_selector, from sync-boiii.py): it hosts the lobby that
   # sv_lobby_mode names and, with sv_skip_lobby 1, launches the first entry of
   # sv_maprotation. A map_rotate at launch fires before that lobby exists, so
   # the engine is still in multiplayer mode: a zm_ map then loads mp_common and

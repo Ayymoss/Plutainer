@@ -162,7 +162,7 @@ Plutainer downloads `boiii.exe` and BOIII's own data files (scripts, Lua, game s
 
 Multiplayer and zombies only, so no campaign config is seeded.
 
-**The first map is loaded by a lobby script, not by `+map_rotate`.** Plutainer seeds `app/runtime/gamefiles/boiii/lobby_scripts/server_lobby_selector/`, the lobby script from the same community bundle as the configs. It is what makes these config lines work:
+**The first map is loaded by a lobby script, not by `+map_rotate`.** BOIII bundles a `server_lobby_selector` lobby script in its own `data/` (from v3.1.0; Plutainer used to seed its own copy). It is what makes these config lines work:
 
 ```
 set sv_lobby_mode "zm"     // which lobby to host: mp or zm
@@ -170,9 +170,9 @@ set sv_skip_lobby "1"      // start the first map in sv_maprotation straight awa
 set sv_maprotation "gametype zclassic map zm_tomb"
 ```
 
-No game reads those two settings itself. Without the script, the server hosts a multiplayer lobby and never loads a map, whatever the config says. Starting a map with `+map_rotate` instead does not work for zombies: it fires before the lobby exists, while the server is still in multiplayer mode, so a `zm_` map loads the multiplayer common files and dies with `Could not load default asset '' for asset type 'rawfile'` (`perklistitemfactory.lua`). T7x behaves the same way, which is why it never used `+map_rotate`. So BOIII ignores `PLUTAINER_MAP_ROTATE`. The script is put back on every start if it is missing.
+No game reads those two settings itself. Without the script, the server hosts a multiplayer lobby and never loads a map, whatever the config says. Starting a map with `+map_rotate` instead does not work for zombies: it fires before the lobby exists, while the server is still in multiplayer mode, so a `zm_` map loads the multiplayer common files and dies with `Could not load default asset '' for asset type 'rawfile'` (`perklistitemfactory.lua`). T7x behaves the same way, which is why it never used `+map_rotate`. So BOIII ignores `PLUTAINER_MAP_ROTATE`. The script arrives with BOIII's `data/` set on every start.
 
-If you are coming from T7x, your configs already have these lines. Its copy of the script lived in `t7x/lobby_scripts/`, which BOIII does not read.
+If you are coming from T7x, your configs already have these lines.
 
 With `sv_skip_lobby "0"` the server waits in the lobby instead, which is what playlists need.
 
@@ -254,7 +254,7 @@ On first start Plutainer copies a working config into `app/configs/`. Existing f
 | T5 | [xerxes-at/T5ServerConfig](https://github.com/xerxes-at/T5ServerConfig) |
 | T6 | [xerxes-at/T6ServerConfigs](https://github.com/xerxes-at/T6ServerConfigs) |
 | IW5 | [xerxes-at/IW5ServerConfig](https://github.com/xerxes-at/IW5ServerConfig) |
-| BOIII | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) — the `zone/` configs, and the `server_lobby_selector` lobby script from its `t7x/` tree, moved to `boiii/lobby_scripts/`. The rest of `t7x/` is another client's data directory and is not shipped |
+| BOIII | [Dss0/t7-server-config](https://github.com/Dss0/t7-server-config) — the `zone/` configs. Its `t7x/` tree is another client's data directory and is not shipped |
 | IW4x | [iw4x/iw4-server-configs](https://github.com/iw4x/iw4-server-configs) |
 | CoD4x | Maintained in this repo, adapted from [matracey/docker-cod4](https://github.com/matracey/docker-cod4) |
 | Nebula | Maintained in this repo from the defaults in Nebula's [headless-server guide](https://github.com/NebulaModTeam/nebula/wiki/Setup-Headless-Server) |
