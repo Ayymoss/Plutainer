@@ -399,6 +399,10 @@ PY
 # Args: <path> <section> <key> <value>
 steam_ini_set() {
   [[ -n "${4:-}" ]] || return 0
+  if [[ ! -f "$1" ]]; then
+    echo "[WARN] $1 does not exist; not setting [$2] $3." >&2
+    return 0
+  fi
   INI_PATH="$1" INI_SECTION="$2" INI_KEY="$3" INI_VALUE="$4" python3 - <<'PY'
 import os
 
@@ -861,6 +865,12 @@ STEAM_SANDSTORM_INIS=(Game.ini Engine.ini)
 STEAM_SANDSTORM_SERVER_FILES=(MapCycle.txt Admins.txt Motd.txt)
 
 steam_seed_sandstorm() {
+  # Lift before seeding, or the seed would land in configs/ first and a config
+  # the user already left at the engine path would be set aside instead of
+  # adopted. The engine dirs are read in place here, before Saved is persisted;
+  # persisting copies whatever remains.
+  steam_lift_engine_configs "$STEAM_INSTALL_DIR/$STEAM_GAME_DIR/Saved/Config/LinuxServer" "${STEAM_SANDSTORM_INIS[@]}"
+  steam_lift_engine_configs "$STEAM_INSTALL_DIR/$STEAM_GAME_DIR/Config/Server" "${STEAM_SANDSTORM_SERVER_FILES[@]}"
   steam_seed_config_from_image Game.ini MapCycle.txt Admins.txt
 }
 
@@ -878,8 +888,6 @@ steam_stage_sandstorm() {
 
   local ini_dir="$STEAM_INSTALL_DIR/$STEAM_GAME_DIR/Saved/Config/LinuxServer"
   local server_dir="$STEAM_INSTALL_DIR/$STEAM_GAME_DIR/Config/Server"
-  steam_lift_engine_configs "$ini_dir" "${STEAM_SANDSTORM_INIS[@]}"
-  steam_lift_engine_configs "$server_dir" "${STEAM_SANDSTORM_SERVER_FILES[@]}"
   link_named_configs "$ini_dir" "${STEAM_SANDSTORM_INIS[@]}"
   link_named_configs "$server_dir" "${STEAM_SANDSTORM_SERVER_FILES[@]}"
 }
